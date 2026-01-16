@@ -7,6 +7,7 @@ pyttsx3>=2.90
 pyaudio>=0.2.11
 
 # LLM Integration
+google-generativeai>=0.3.0
 groq>=0.4.0
 openai>=1.0.0
 

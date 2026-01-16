@@ -72,13 +72,29 @@ class SpeechEngine:
             logger.info(f"Speaking: {text}")
             self.tts_engine.say(text)
             self.tts_engine.runAndWait()
+            # Add small delay to ensure clean audio output
+            import time
+            time.sleep(0.2)
         except Exception as e:
             logger.error(f"Error in TTS: {e}")
-            print(f"JARVIS: {text}")  # Fallback
+            print(f"JARVIS: {text}")  # Fallback to print
+            # Try to reinitialize TTS engine
+            try:
+                self.tts_engine.stop()
+            except:
+                pass
+            try:
+                self.tts_engine = pyttsx3.init()
+                self.set_voice_properties(150, 0.9, 0)
+                logger.info("TTS engine reinitialized")
+            except Exception as reinit_error:
+                logger.error(f"Failed to reinitialize TTS: {reinit_error}")
+                self.tts_engine = None
     
     def listen(self, timeout: int = 5, phrase_time_limit: int = 5) -> Optional[str]:
         """
-        Listen for speech and convert to text.
+        Listen for speech and convert to text using Google Speech Recognition.
+        Optimized with better noise handling and retries.
         
         Args:
             timeout: Seconds to wait for speech
@@ -93,36 +109,52 @@ class SpeechEngine:
         
         try:
             with self.microphone as source:
-                logger.debug("Listening...")
+                # Optimize recognizer settings for better accuracy
+                self.recognizer.energy_threshold = 3000  # More lenient with quiet speech
+                self.recognizer.dynamic_energy_threshold = True  # Auto-adjust to environment
+                self.recognizer.phrase_threshold = 0.1  # Lower threshold (default 0.3)
+                
+                logger.debug("Adjusting for ambient noise...")
+                # Longer noise adjustment for better calibration
+                self.recognizer.adjust_for_ambient_noise(source, duration=1)
+                
+                logger.debug("Listening for speech...")
                 audio = self.recognizer.listen(
                     source, 
                     timeout=timeout, 
-                    phrase_time_limit=phrase_time_limit
+                    phrase_time_limit=phrase_time_limit,
+                    snowboy_configuration=None
                 )
             
-            # Try faster-whisper first if enabled, else fallback to Google
-            if USE_WHISPER:
-                try:
-                    # Note: faster-whisper integration would go here
-                    # For now, fallback to Google
-                    text = self.recognizer.recognize_google(audio)
-                except:
-                    text = self.recognizer.recognize_google(audio)
-            else:
-                text = self.recognizer.recognize_google(audio)
+            logger.debug("Processing audio with Google Speech Recognition...")
             
-            logger.info(f"Recognized: {text}")
-            return text.lower()
+            # Try with retry logic for robustness
+            try:
+                text = self.recognizer.recognize_google(audio)
+                logger.info(f"✓ Recognized: {text}")
+                return text.lower()
+            except sr.UnknownValueError as e:
+                # Audio detected but not recognized - could be too quiet or unclear
+                logger.warning(f"❓ Could not understand audio clearly")
+                logger.debug(f"   Audio captured but recognition failed: {e}")
+                logger.info("   Suggestions:")
+                logger.info("   • Speak louder or closer to microphone")
+                logger.info("   • Reduce background noise")
+                logger.info("   • Speak at normal pace")
+                return None
             
         except sr.WaitTimeoutError:
-            logger.debug("No speech detected")
-            return None
-        except sr.UnknownValueError:
-            logger.warning("Could not understand audio")
+            logger.debug("⏱ Timeout - no speech detected (silent for too long)")
             return None
         except sr.RequestError as e:
-            logger.error(f"STT service error: {e}")
+            if "Failed to connect" in str(e) or "HTTPSConnectionPool" in str(e):
+                logger.error(f"🌐 No internet connection - cannot use Google Speech Recognition")
+                logger.info("   Solutions:")
+                logger.info("   1. Check your internet connection")
+                logger.info("   2. Use text mode: run_text_mode.bat")
+            else:
+                logger.error(f"Speech Recognition API error: {e}")
             return None
         except Exception as e:
-            logger.error(f"Unexpected error in listen: {e}")
+            logger.error(f"Unexpected error during speech recognition: {e}")
             return None

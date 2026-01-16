@@ -18,7 +18,7 @@ class UserSettings:
     language: str = "en"
     city: str = "Chennai"  # Default city for weather/location-based queries
     name: str = "Sir"  # How JARVIS addresses the user
-    use_wake_word: bool = True
+    use_wake_word: bool = False  # Disabled for easier voice interaction
     
     @classmethod
     def load(cls, settings_file: Optional[Path] = None) -> "UserSettings":

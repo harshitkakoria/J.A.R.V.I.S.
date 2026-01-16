@@ -42,10 +42,27 @@ def handle(query: str) -> Optional[str]:
             return joke
         except Exception as e:
             logger.error(f"Error getting joke: {e}")
-            return "Why did the AI break up with the computer? It had too many bugs!"
+            # Fallback jokes
+            jokes = [
+                "Why did the AI break up with the computer? It had too many bugs!",
+                "Why do programmers prefer dark mode? Because light attracts bugs!",
+                "How many programmers does it take to change a light bulb? None, that's a hardware problem!",
+                "Why do Java developers wear glasses? Because they don't C#!",
+                "A SQL query walks into a bar, walks up to two tables and asks... 'Can I join you?'",
+                "Why did the developer go broke? Because he used up all his cache!",
+                "How many Prolog programmers does it take to change a lightbulb? No, that's not how Prolog works.",
+                "Why do we call it debugging? Because in the 1940s, a real bug caused a computer error!"
+            ]
+            import random
+            return random.choice(jokes)
     
     # Wikipedia search
-    if any(kw in query_lower for kw in ["wikipedia", "search wikipedia", "what is", "who is", "tell me about"]):
+    # Wikipedia search (but NOT for weather-related queries)
+    # Weather queries are handled by the weather skill instead
+    weather_keywords = ["weather", "temperature", "forecast", "rain", "cold", "hot", "climate", "humid"]
+    is_weather_query = any(kw in query_lower for kw in weather_keywords)
+    
+    if not is_weather_query and any(kw in query_lower for kw in ["wikipedia", "search wikipedia", "what is", "who is", "tell me about"]):
         # Extract search term
         search_term = None
         for keyword in ["wikipedia", "search wikipedia", "what is", "who is", "tell me about"]:

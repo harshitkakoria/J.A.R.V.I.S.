@@ -26,9 +26,10 @@ env/
 ENV/
 .venv
 
-# Environment variables
+# Environment variables (SENSITIVE - Never commit!)
 .env
 .env.local
+.env.*.local
 
 # IDE
 .vscode/
@@ -44,6 +45,11 @@ desktop.ini
 
 # Project specific
 data/memory.json
+data/settings.json
+data/knowledge_base.json
+data/known_faces/
+screenshots/
+logs/
 *.log
 *.wav
 *.mp3

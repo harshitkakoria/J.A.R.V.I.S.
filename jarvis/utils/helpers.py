@@ -30,16 +30,20 @@ def clean_text(text: str) -> str:
 def extract_keywords(query: str, keywords: List[str]) -> List[str]:
     """
     Extract matching keywords from query.
+    Prioritizes longer/more specific keywords first.
     
     Args:
         query: User query
         keywords: List of keywords to search for
         
     Returns:
-        List of matched keywords
+        List of matched keywords (sorted by length, descending)
     """
     query_lower = clean_text(query)
     matched = [kw for kw in keywords if kw.lower() in query_lower]
+    # Sort by length (longest first) to prioritize specific keywords
+    # e.g., "take a screenshot" should match "screenshot" before "hot"
+    matched = sorted(matched, key=len, reverse=True)
     return matched
 
 

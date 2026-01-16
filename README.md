@@ -59,37 +59,24 @@ Jarvis/
 
 1. **Clone or download this repository**
 
-2. **Install Ollama** (Required for LLM):
-   - Download from: https://ollama.com/download
-   - Install the application (it's a separate program, not a Python package)
-   - On Windows: Downloads to `C:\Users\<YourUsername>\AppData\Local\Programs\Ollama\`
-   - Models are stored in: `C:\Users\<YourUsername>\.ollama\models\`
-   - After installation, verify it's running:
-     ```bash
-     ollama --version
-     ```
-
-3. **Pull the Gemma model** (or any model you want to use):
-   ```bash
-   ollama pull gemma2:27b
-   # Or use: ollama pull google/gemma-3-27b-it:free
-   ```
-   Note: Model names may vary. Check available models with `ollama list`
-
-4. **Create a virtual environment** (recommended):
+2. **Create a virtual environment** (recommended):
    ```bash
    python -m venv venv
    venv\Scripts\activate  # On Windows
    ```
 
-5. **Install Python dependencies**:
+3. **Install Python dependencies**:
    ```bash
    pip install -r requirements.txt
    ```
 
-6. **Set up environment variables**:
-   - The `.env` file is already created with Ollama configuration
-   - Update `OLLAMA_MODEL` in `.env` to match the model you pulled
+4. **Set up environment variables**:
+   - The `.env` file is already created with Gemini API configuration
+   - Your Gemini API key is already configured
+   - You can change `GEMINI_MODEL` in `.env` to use different models:
+     - `gemini-1.5-flash` (fast, recommended)
+     - `gemini-1.5-pro` (more capable)
+     - `gemini-pro` (older version)
    - Optional: Add API keys for Groq/OpenAI if you want to use them instead
 
 ## Running JARVIS

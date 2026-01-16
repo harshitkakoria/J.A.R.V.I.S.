@@ -3,6 +3,13 @@ Main entry point for JARVIS.
 Starts the listening loop and handles the greeting.
 """
 import sys
+from pathlib import Path
+
+# Add project root to Python path
+project_root = Path(__file__).parent.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
 from jarvis.core.speech import SpeechEngine
 from jarvis.core.listener import Listener
 from jarvis.core.brain import Brain
@@ -22,13 +29,41 @@ def greet(settings: UserSettings, response_handler: ResponseHandler):
 
 def register_skills(brain: Brain):
     """Register all available skills with the brain."""
-    from jarvis.skills import basic
+    from jarvis.skills import basic, weather, system, scrape, web
     
     # Register basic skills
     brain.register_skill(
         "basic",
         basic.handle,
         keywords=["time", "date", "joke", "wikipedia", "who are you", "exit", "bye", "what is", "who is"]
+    )
+    
+    # Register weather skill
+    brain.register_skill(
+        "weather",
+        weather.handle,
+        keywords=["weather", "temperature", "forecast", "rain", "hot", "cold", "climate"]
+    )
+    
+    # Register system control skill
+    brain.register_skill(
+        "system",
+        system.handle,
+        keywords=["screenshot", "shutdown", "restart", "reboot", "volume", "mute", "quiet", "loud"]
+    )
+    
+    # Register web scraping skill
+    brain.register_skill(
+        "scrape",
+        scrape.handle,
+        keywords=["news", "headline", "gold", "stock", "market", "price"]
+    )
+    
+    # Register web browsing skill
+    brain.register_skill(
+        "web",
+        web.handle,
+        keywords=["google", "youtube", "search", "play", "open", "visit", "website", "github", "stackoverflow"]
     )
     
     logger.info("Skills registered")
@@ -63,46 +98,65 @@ def main():
         greet(settings, response_handler)
         
         # Main loop
-        logger.info("Entering main loop")
+        logger.info("Entering main loop - say 'goodbye' to exit")
+        attempt_count = 0
+        max_consecutive_failures = 3
+        
         while True:
             try:
-                # Wait for wake word (if enabled)
+                # Wait for wake word (if enabled) with timeout
                 if settings.use_wake_word:
-                    if not listener.wait_for_wake_word():
+                    logger.info("Listening for wake word 'jarvis'...")
+                    if not listener.wait_for_wake_word(timeout=60):
+                        logger.info("No wake word detected, restarting...")
                         continue
-                
-                # Acknowledge wake word
-                response_handler.acknowledge()
+                    # Acknowledge wake word
+                    response_handler.acknowledge()
+                else:
+                    logger.info("Ready for command...")
                 
                 # Capture command
+                logger.debug("Listening for command...")
                 command = listener.capture_command(timeout=5)
                 
                 if not command:
-                    logger.debug("No command captured")
+                    logger.debug("No command captured, try again")
+                    attempt_count += 1
+                    if attempt_count >= max_consecutive_failures:
+                        response_handler.respond("I didn't catch that. Please try again.")
+                        attempt_count = 0
                     continue
                 
+                # Reset failure counter on successful capture
+                attempt_count = 0
+                
+                logger.info(f"Command received: {command}")
                 # Process command
                 response = brain.process(command)
                 
                 # Handle exit
-                if response and any(kw in response.lower() for kw in ["goodbye", "bye"]):
+                if response and any(kw in response.lower() for kw in ["goodbye", "bye", "see you"]):
                     response_handler.respond(response)
-                    logger.info("Shutting down")
+                    logger.info("Shutting down JARVIS")
                     break
                 
-                # Respond
+                # Respond with TTS
                 if response:
                     response_handler.respond(response)
                 else:
-                    response_handler.respond("I didn't catch that. Could you repeat?")
+                    response_handler.respond("I didn't understand that. Could you rephrase?")
                     
             except KeyboardInterrupt:
-                logger.info("Interrupted by user")
+                logger.info("Interrupted by user (Ctrl+C)")
                 response_handler.respond("Goodbye!")
                 break
             except Exception as e:
                 logger.error(f"Error in main loop: {e}", exc_info=True)
                 response_handler.respond("Sorry, I encountered an error. Please try again.")
+                attempt_count += 1
+                if attempt_count >= max_consecutive_failures:
+                    logger.error("Too many errors, restarting...")
+                    attempt_count = 0
     
     except Exception as e:
         logger.critical(f"Fatal error: {e}", exc_info=True)

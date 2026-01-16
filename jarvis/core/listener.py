@@ -26,22 +26,35 @@ class Listener:
         self.use_wake_word = use_wake_word
         logger.info(f"Listener initialized with wake word: '{self.wake_word}'")
     
-    def wait_for_wake_word(self) -> bool:
+    def wait_for_wake_word(self, timeout: int = 30) -> bool:
         """
         Wait for wake word to be detected.
         
+        Args:
+            timeout: Seconds to wait before giving up (0 = infinite)
+            
         Returns:
-            True if wake word detected, False otherwise
+            True if wake word detected, False if timeout
         """
         if not self.use_wake_word:
             return True
         
-        logger.debug("Waiting for wake word...")
-        while True:
-            text = self.speech_engine.listen(timeout=1, phrase_time_limit=2)
+        logger.debug(f"Waiting for wake word '{self.wake_word}'...")
+        attempts = 0
+        max_attempts = timeout if timeout > 0 else 999999  # Large number for "infinite"
+        
+        while attempts < max_attempts:
+            text = self.speech_engine.listen(timeout=2, phrase_time_limit=3)
             if text and self.wake_word in clean_text(text):
-                logger.info(f"Wake word '{self.wake_word}' detected!")
+                logger.info(f"✓ Wake word '{self.wake_word}' detected!")
                 return True
+            
+            attempts += 1
+            if timeout > 0 and attempts % 5 == 0:
+                logger.debug(f"Still waiting for wake word... ({attempts}s)")
+        
+        logger.warning(f"Timeout waiting for wake word after {timeout} seconds")
+        return False
     
     def capture_command(self, timeout: int = 5) -> Optional[str]:
         """
@@ -53,7 +66,7 @@ class Listener:
         Returns:
             Captured command text or None
         """
-        logger.debug("Capturing command...")
+        logger.debug("Listening for command...")
         command = self.speech_engine.listen(timeout=timeout, phrase_time_limit=5)
         
         if command:
@@ -61,6 +74,8 @@ class Listener:
             command = clean_text(command)
             if self.wake_word in command:
                 command = command.replace(self.wake_word, "").strip()
-            return command
+            
+            if command:  # Make sure there's still text after removing wake word
+                return command
         
         return None

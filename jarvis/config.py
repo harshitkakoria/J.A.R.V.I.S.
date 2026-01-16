@@ -12,14 +12,20 @@ load_dotenv()
 PROJECT_ROOT = Path(__file__).parent.parent
 
 # API Keys (from .env)
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
+OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "google/gemma-2-9b-it:free")
+TOGETHER_API_KEY = os.getenv("TOGETHER_API_KEY", "")
+TOGETHER_MODEL = os.getenv("TOGETHER_MODEL", "google/gemma-3-27b-it:free")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2")
 
 # LLM Configuration
-USE_OLLAMA = os.getenv("USE_OLLAMA", "true").lower() == "true"
+USE_OPENROUTER = os.getenv("USE_OPENROUTER", "true").lower() == "true"
+USE_TOGETHER = os.getenv("USE_TOGETHER", "false").lower() == "true"
+USE_GEMINI = os.getenv("USE_GEMINI", "false").lower() == "true"
 USE_GROQ = os.getenv("USE_GROQ", "false").lower() == "true"
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-pro")
 
 # Speech Recognition
 WHISPER_MODEL = os.getenv("WHISPER_MODEL", "base")  # tiny, base, small, medium, large
