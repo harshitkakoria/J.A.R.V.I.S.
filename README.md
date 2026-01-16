@@ -1,2 +1,123 @@
 # J.A.R.V.I.S
+**Just A Rather Very Intelligent System**
+
 I am trynna to be Iron man.
+
+## Project Structure
+
+```
+Jarvis/
+├── jarvis/                     # Main Python package (importable)
+│   ├── __init__.py             # Makes the folder a package
+│   ├── main.py                 # Entry point: starts listening loop + greeting
+│   ├── config.py               # API keys, paths, constants, voice settings
+│   ├── settings.py             # User preferences (wake word, language, voice speed, etc.)
+│   │
+│   ├── core/                   # Heart of the assistant
+│   │   ├── __init__.py
+│   │   ├── speech.py           # STT (speech recognition) + TTS (text-to-speech)
+│   │   ├── listener.py         # Wake-word detection + command recording
+│   │   ├── brain.py            # Command parser / LLM integration / decision making
+│   │   └── response.py         # Formatting + speaking replies
+│   │
+│   ├── skills/                 # Individual features / commands (modular!)
+│   │   ├── __init__.py
+│   │   ├── basic.py            # time, joke, wikipedia, exit
+│   │   ├── web.py              # open youtube/google, play song (pywhatkit)
+│   │   ├── system.py           # shutdown, screenshot, volume (pyautogui + os)
+│   │   ├── scrape.py           # BeautifulSoup + requests (gold price, news, weather)
+│   │   ├── browser.py          # Selenium tasks (login, search jobs, fill forms)
+│   │   └── custom.py           # Your own new skills (Spotify, email, reminders…)
+│   │
+│   ├── utils/                  # Helper functions used everywhere
+│   │   ├── __init__.py
+│   │   ├── audio.py            # Record/play sound (pyaudio/sounddevice)
+│   │   ├── logger.py           # Logging setup
+│   │   ├── paths.py            # Project paths, user folders
+│   │   └── helpers.py          # date formatting, string cleaning, etc.
+│   │
+│   └── resources/              # Non-code assets
+│       ├── sounds/             # wake-up chime, error sound, etc. (.wav)
+│       └── voices/             # If using local TTS → model files or cache
+│
+├── tests/                      # Unit tests
+│   ├── __init__.py
+│   └── test_speech.py          # Example: test TTS/STT stubs
+│
+├── data/                       # Persistent data (optional)
+│   ├── memory.json             # Conversation history / short-term memory
+│   └── known_faces/            # If you add face recognition later
+│
+├── .env                        # Secrets: API keys (Groq, OpenAI, ElevenLabs…)
+├── .gitignore                  # Ignore venv, __pycache__, .env, etc.
+├── requirements.txt            # pip freeze > requirements.txt
+├── README.md                   # This file
+└── run.bat                     # Windows: quick double-click launcher
+```
+
+## Installation
+
+1. **Clone or download this repository**
+
+2. **Install Ollama** (Required for LLM):
+   - Download from: https://ollama.com/download
+   - Install the application (it's a separate program, not a Python package)
+   - On Windows: Downloads to `C:\Users\<YourUsername>\AppData\Local\Programs\Ollama\`
+   - Models are stored in: `C:\Users\<YourUsername>\.ollama\models\`
+   - After installation, verify it's running:
+     ```bash
+     ollama --version
+     ```
+
+3. **Pull the Gemma model** (or any model you want to use):
+   ```bash
+   ollama pull gemma2:27b
+   # Or use: ollama pull google/gemma-3-27b-it:free
+   ```
+   Note: Model names may vary. Check available models with `ollama list`
+
+4. **Create a virtual environment** (recommended):
+   ```bash
+   python -m venv venv
+   venv\Scripts\activate  # On Windows
+   ```
+
+5. **Install Python dependencies**:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+6. **Set up environment variables**:
+   - The `.env` file is already created with Ollama configuration
+   - Update `OLLAMA_MODEL` in `.env` to match the model you pulled
+   - Optional: Add API keys for Groq/OpenAI if you want to use them instead
+
+## Running JARVIS
+
+### Windows
+- Double-click `run.bat`, or
+- Run: `python -m jarvis.main`
+
+### Linux/Mac
+```bash
+python -m jarvis.main
+```
+
+## Features
+
+- 🎤 **Voice Recognition**: Wake-word detection and command recording
+- 🧠 **AI Brain**: LLM integration for intelligent responses
+- 🔊 **Text-to-Speech**: Natural voice responses
+- 🌐 **Web Skills**: Open websites, play music, search
+- 💻 **System Control**: Screenshots, volume control, shutdown
+- 📊 **Web Scraping**: Get news, weather, gold prices
+- 🤖 **Browser Automation**: Selenium-based tasks
+- 🔧 **Modular Skills**: Easy to add new capabilities
+
+## Development
+
+This is a modular project. Add new skills by creating functions in the `jarvis/skills/` directory.
+
+## License
+
+Personal project - feel free to use and modify!
