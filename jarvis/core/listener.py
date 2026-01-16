@@ -67,7 +67,8 @@ class Listener:
             Captured command text or None
         """
         logger.debug("Listening for command...")
-        command = self.speech_engine.listen(timeout=timeout, phrase_time_limit=5)
+        # Increased phrase_time_limit from 5 to 8 seconds for longer sentences
+        command = self.speech_engine.listen(timeout=timeout, phrase_time_limit=8)
         
         if command:
             # Remove wake word from command if present

@@ -25,11 +25,9 @@ def handle(query: str) -> Optional[str]:
     if any(kw in query_lower for kw in ["screenshot", "take a screenshot", "capture screen", "print screen"]):
         return take_screenshot()
     
-    # Shutdown - DISABLED FOR SAFETY (requires manual confirmation)
-    # Accidental triggers could shut down the system unexpectedly
+    # Shutdown - RE-ENABLED with confirmation requirement
     if any(kw in query_lower for kw in ["shutdown", "power off", "turn off", "reboot", "restart"]):
-        logger.warning(f"Shutdown command blocked for safety: {query_lower}")
-        return "Shutdown command is disabled for safety. Please use Windows shutdown menu directly."
+        return shutdown_system(query_lower)
     
     # Volume control
     if any(kw in query_lower for kw in ["volume", "loud", "quiet", "mute"]):
@@ -70,32 +68,38 @@ def take_screenshot() -> str:
 def shutdown_system(query: str) -> str:
     """
     Shutdown or restart the system.
-    DISABLED FOR SAFETY - This function is dangerous and could shut down the system unexpectedly.
+    REQUIRES 'confirm' or 'yes' keyword for safety.
     """
-    return "Shutdown command is disabled for safety. Please use Windows shutdown menu directly."
-    
-    # WARNING: Dangerous code below - DO NOT ENABLE without manual confirmation
-    # try:
-    #     system = platform.system()
-    #     
-    #     if "restart" in query or "reboot" in query:
-    #         if system == "Windows":
-    #             os.system("shutdown /r /t 10")
-    #             return "System will restart in 10 seconds."
-    #         else:
-    #             os.system("shutdown -r -t 10")
-    #             return "System will restart in 10 seconds."
-    #     else:
-    #         if system == "Windows":
-    #             os.system("shutdown /s /t 10")
-    #             return "System will shutdown in 10 seconds."
-    #         else:
-    #             os.system("shutdown -h -t 10")
-    #             return "System will shutdown in 10 seconds."
-    #             
-    # except Exception as e:
-    #     logger.error(f"Shutdown error: {e}")
-    #     return f"Failed to shutdown system: {str(e)}"
+    try:
+        # SAFETY: Require explicit confirmation
+        if "confirm" not in query and "yes" not in query:
+            if "restart" in query or "reboot" in query:
+                return "Restart requires confirmation. Say 'restart confirm' or 'restart yes'"
+            else:
+                return "Shutdown requires confirmation. Say 'shutdown confirm' or 'shutdown yes'"
+        
+        system = platform.system()
+        
+        if "restart" in query or "reboot" in query:
+            logger.critical(f"SYSTEM RESTART INITIATED by user command: {query}")
+            if system == "Windows":
+                os.system("shutdown /r /t 10")
+                return "System will restart in 10 seconds. Cancel with: shutdown /a"
+            else:
+                os.system("shutdown -r -t 10")
+                return "System will restart in 10 seconds."
+        else:
+            logger.critical(f"SYSTEM SHUTDOWN INITIATED by user command: {query}")
+            if system == "Windows":
+                os.system("shutdown /s /t 10")
+                return "System will shutdown in 10 seconds. Cancel with: shutdown /a"
+            else:
+                os.system("shutdown -h -t 10")
+                return "System will shutdown in 10 seconds."
+                
+    except Exception as e:
+        logger.error(f"Shutdown error: {e}")
+        return f"Failed to shutdown system: {str(e)}"
 
 
 def control_volume(query: str) -> str:

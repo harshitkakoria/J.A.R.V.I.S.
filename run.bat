@@ -27,18 +27,18 @@ echo.
 cd /d "%~dp0"
 
 REM Check if venv exists
-if not exist ".venv\Scripts\python.exe" (
+if not exist "venv\Scripts\python.exe" (
     echo.
     echo ERROR: Virtual environment not found!
-    echo Please run: python -m venv .venv
-    echo Then run: .venv\Scripts\pip.exe install -r requirements.txt
+    echo Please run: python -m venv venv
+    echo Then run: venv\Scripts\pip.exe install -r requirements.txt
     echo.
     pause
     exit /b 1
 )
 
 REM Run JARVIS and capture errors
-.venv\Scripts\python.exe -m jarvis.main
+venv\Scripts\python.exe -m jarvis.main
 
 echo.
 echo JARVIS has shut down.

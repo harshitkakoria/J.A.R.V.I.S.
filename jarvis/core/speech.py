@@ -113,6 +113,8 @@ class SpeechEngine:
                 self.recognizer.energy_threshold = 3000  # More lenient with quiet speech
                 self.recognizer.dynamic_energy_threshold = True  # Auto-adjust to environment
                 self.recognizer.phrase_threshold = 0.1  # Lower threshold (default 0.3)
+                self.recognizer.pause_threshold = 1.0  # Wait 1 second of silence before stopping (default 0.8)
+                self.recognizer.non_speaking_duration = 0.5  # Minimum silence duration (default 0.5)
                 
                 logger.debug("Adjusting for ambient noise...")
                 # Longer noise adjustment for better calibration
@@ -122,8 +124,7 @@ class SpeechEngine:
                 audio = self.recognizer.listen(
                     source, 
                     timeout=timeout, 
-                    phrase_time_limit=phrase_time_limit,
-                    snowboy_configuration=None
+                    phrase_time_limit=phrase_time_limit
                 )
             
             logger.debug("Processing audio with Google Speech Recognition...")

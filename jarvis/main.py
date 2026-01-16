@@ -10,6 +10,7 @@ project_root = Path(__file__).parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
+# Core imports
 from jarvis.core.speech import SpeechEngine
 from jarvis.core.listener import Listener
 from jarvis.core.brain import Brain
@@ -29,44 +30,40 @@ def greet(settings: UserSettings, response_handler: ResponseHandler):
 
 def register_skills(brain: Brain):
     """Register all available skills with the brain."""
-    from jarvis.skills import basic, weather, system, scrape, web
+    # Import skills with error handling (lazy imports to avoid circular dependencies)
+    skills_to_register = []
     
-    # Register basic skills
-    brain.register_skill(
-        "basic",
-        basic.handle,
-        keywords=["time", "date", "joke", "wikipedia", "who are you", "exit", "bye", "what is", "who is"]
-    )
+    # Basic skill (required)
+    try:
+        from jarvis.skills import basic
+        skills_to_register.append(("basic", basic.handle, ["time", "date", "joke", "wikipedia", "who are you", "exit", "bye", "what is", "who is"]))
+    except ImportError as e:
+        logger.error(f"Could not import basic skill: {e}")
+        return  # Cannot continue without basic skill
     
-    # Register weather skill
-    brain.register_skill(
-        "weather",
-        weather.handle,
-        keywords=["weather", "temperature", "forecast", "rain", "hot", "cold", "climate"]
-    )
+    # Optional skills
+    optional_skills = [
+        ("weather", ["weather", "temperature", "forecast", "rain", "hot", "cold", "climate"]),
+        ("system", ["screenshot", "shutdown", "restart", "reboot", "volume", "mute", "quiet", "loud"]),
+        ("scrape", ["news", "headline", "gold", "stock", "market", "price"]),
+        ("web", ["google", "youtube", "search", "play", "open", "visit", "website", "github", "stackoverflow"]),
+        ("file_manager", ["create file", "delete file", "rename file", "create folder", "delete folder", "list files", "show files"]),
+        ("app_control", ["close tab", "close window", "switch window", "minimize", "maximize", "notepad", "calculator", "paint", "explorer", "task manager"]),
+        ("system_commands", ["execute", "run command", "system command"]),
+    ]
     
-    # Register system control skill
-    brain.register_skill(
-        "system",
-        system.handle,
-        keywords=["screenshot", "shutdown", "restart", "reboot", "volume", "mute", "quiet", "loud"]
-    )
+    for skill_name, keywords in optional_skills:
+        try:
+            skill_module = __import__(f"jarvis.skills.{skill_name}", fromlist=[skill_name])
+            skills_to_register.append((skill_name, skill_module.handle, keywords))
+        except (ImportError, AttributeError) as e:
+            logger.debug(f"Skill '{skill_name}' not available: {e}")
     
-    # Register web scraping skill
-    brain.register_skill(
-        "scrape",
-        scrape.handle,
-        keywords=["news", "headline", "gold", "stock", "market", "price"]
-    )
+    # Register all available skills
+    for skill_name, handler, keywords in skills_to_register:
+        brain.register_skill(skill_name, handler, keywords)
     
-    # Register web browsing skill
-    brain.register_skill(
-        "web",
-        web.handle,
-        keywords=["google", "youtube", "search", "play", "open", "visit", "website", "github", "stackoverflow"]
-    )
-    
-    logger.info("Skills registered")
+    logger.info(f"Registered {len(skills_to_register)} skill(s)")
 
 
 def main():

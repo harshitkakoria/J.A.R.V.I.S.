@@ -4,7 +4,12 @@ Command parser, LLM integration, and decision making.
 from typing import Dict, Callable, Optional
 from jarvis.utils.logger import setup_logger
 from jarvis.utils.helpers import extract_keywords, clean_text
-from jarvis.config import USE_OPENROUTER, USE_TOGETHER, USE_GEMINI, USE_GROQ, OPENROUTER_API_KEY, OPENROUTER_MODEL, TOGETHER_API_KEY, TOGETHER_MODEL, GEMINI_API_KEY, GEMINI_MODEL, GROQ_API_KEY
+from jarvis.config import (
+    USE_OPENROUTER, USE_GEMINI, USE_GROQ, 
+    OPENROUTER_API_KEY, OPENROUTER_MODEL, 
+    GEMINI_API_KEY, GEMINI_MODEL, GROQ_API_KEY,
+    JARVIS_SYSTEM_PROMPT
+)
 
 logger = setup_logger(__name__)
 
@@ -53,8 +58,17 @@ class Brain:
         
         if matched_keywords:
             # Prioritize more specific action keywords
-            # Priority: scrape > system > weather > web > basic
-            priority_map = {"scrape": 5, "system": 4, "weather": 3, "web": 2, "basic": 1}
+            # Priority: system_commands > scrape > system > app_control > file_manager > weather > web > basic
+            priority_map = {
+                "system_commands": 8,  # Most dangerous, highest priority
+                "scrape": 7,
+                "system": 6,
+                "app_control": 5,
+                "file_manager": 4,
+                "weather": 3,
+                "web": 2,
+                "basic": 1
+            }
             
             best_keyword = matched_keywords[0]
             best_priority = priority_map.get(self.keyword_map.get(best_keyword), 0)
@@ -96,8 +110,6 @@ class Brain:
         try:
             if USE_OPENROUTER:
                 return self._query_openrouter(query)
-            elif USE_TOGETHER:
-                return self._query_together(query)
             elif USE_GEMINI:
                 return self._query_gemini(query)
             elif USE_GROQ:
@@ -110,102 +122,97 @@ class Brain:
             return "I'm having trouble understanding. Could you try again?"
     
     def _query_openrouter(self, query: str) -> Optional[str]:
-        """Query OpenRouter API."""
+        """Query OpenRouter API using OpenAI-compatible client."""
         try:
-            import requests
+            from openai import OpenAI  # type: ignore
             
             if not OPENROUTER_API_KEY:
                 logger.error("OPENROUTER_API_KEY not set")
                 return "I need an OpenRouter API key to function. Please set OPENROUTER_API_KEY in your .env file."
             
-            # OpenRouter API endpoint
-            url = "https://openrouter.ai/api/v1/chat/completions"
+            # OpenRouter is OpenAI-compatible, use OpenAI client
+            client = OpenAI(
+                base_url="https://openrouter.ai/api/v1",
+                api_key=OPENROUTER_API_KEY,
+            )
             
-            headers = {
-                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-                "HTTP-Referer": "https://jarvis.local",
-                "X-Title": "JARVIS",
-                "Content-Type": "application/json"
-            }
+            # Try llama-3.1-70b-instruct:free first, fallback to qwen2.5-72b-instruct
+            model = OPENROUTER_MODEL
             
-            payload = {
-                "model": OPENROUTER_MODEL,
-                "messages": [
-                    {"role": "system", "content": "You are JARVIS, a helpful AI assistant inspired by Iron Man. You are witty, efficient, and always ready to assist. Respond concisely and naturally."},
+            completion = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": JARVIS_SYSTEM_PROMPT},
                     {"role": "user", "content": query}
                 ],
-                "max_tokens": 200,
-                "temperature": 0.7,
-            }
+                temperature=0.3,  # Lower temperature for more consistent & thoughtful responses
+                top_p=0.9,
+                max_tokens=400,
+            )
             
-            response = requests.post(url, json=payload, headers=headers, timeout=10)
+            if completion.choices and len(completion.choices) > 0:
+                response_text = completion.choices[0].message.content.strip()
+                if response_text:
+                    return response_text
             
-            if response.status_code == 200:
-                data = response.json()
-                if "choices" in data and len(data["choices"]) > 0:
-                    text = data["choices"][0]["message"]["content"].strip()
-                    if text:
-                        return text
-            else:
-                logger.error(f"OpenRouter API error: {response.status_code} - {response.text}")
-                return f"API Error: {response.status_code}"
+            logger.warning("OpenRouter returned empty response")
+            return "I'm not sure how to help with that. Could you rephrase?"
                 
         except ImportError:
-            logger.error("requests library not available")
-            return "Requests library not installed."
+            logger.error("openai library not available. Install with: pip install openai")
+            return "OpenAI library not installed. Please install openai."
         except Exception as e:
             logger.error(f"OpenRouter query error: {e}")
+            # Try fallback models if primary fails
+            fallback_models = [
+                "xiaomi/mimo-v2-flash:free",
+                "nvidia/nemotron-3-nano-30b-a3b:free",
+                "qwen/qwen3-next-80b-a3b-instruct:free"
+            ]
+            logger.info("Trying fallback models...")
+            for fallback_model in fallback_models:
+                try:
+                    result = self._query_openrouter_fallback(query, fallback_model)
+                    if result:
+                        logger.info(f"Fallback model '{fallback_model}' succeeded")
+                        return result
+                except Exception as fallback_error:
+                    logger.debug(f"Fallback '{fallback_model}' failed: {fallback_error}")
+                    continue
             return f"I encountered an error: {str(e)}"
     
-    def _query_together(self, query: str) -> Optional[str]:
-        """Query Together AI with Gemma 3 model."""
+    def _query_openrouter_fallback(self, query: str, fallback_model: str) -> Optional[str]:
+        """Fallback query with alternative model."""
         try:
-            import requests
+            from openai import OpenAI  # type: ignore
             
-            if not TOGETHER_API_KEY:
-                logger.error("TOGETHER_API_KEY not set")
-                return "I need a Together AI API key to function. Please set TOGETHER_API_KEY in your .env file."
+            client = OpenAI(
+                base_url="https://openrouter.ai/api/v1",
+                api_key=OPENROUTER_API_KEY,
+            )
             
-            # Together AI API endpoint
-            url = "https://api.together.xyz/inference"
+            completion = client.chat.completions.create(
+                model=fallback_model,
+                messages=[
+                    {"role": "system", "content": JARVIS_SYSTEM_PROMPT},
+                    {"role": "user", "content": query}
+                ],
+                temperature=0.3,
+                top_p=0.9,
+                max_tokens=400,
+            )
             
-            headers = {
-                "Authorization": f"Bearer {TOGETHER_API_KEY}",
-                "Content-Type": "application/json"
-            }
-            
-            payload = {
-                "model": TOGETHER_MODEL,
-                "prompt": f"You are JARVIS, a helpful AI assistant inspired by Iron Man. You are witty, efficient, and always ready to assist. Respond concisely and naturally.\n\nUser: {query}\nJARVIS:",
-                "max_tokens": 200,
-                "temperature": 0.7,
-                "top_p": 0.9,
-                "top_k": 50,
-            }
-            
-            response = requests.post(url, json=payload, headers=headers, timeout=10)
-            
-            if response.status_code == 200:
-                data = response.json()
-                if "output" in data and "choices" in data["output"]:
-                    text = data["output"]["choices"][0]["text"].strip()
-                    if text:
-                        return text
-            else:
-                logger.error(f"Together AI API error: {response.status_code} - {response.text}")
-                return f"API Error: {response.status_code}"
-                
-        except ImportError:
-            logger.error("requests library not available")
-            return "Requests library not installed."
+            if completion.choices and len(completion.choices) > 0:
+                return completion.choices[0].message.content.strip()
+            return None
         except Exception as e:
-            logger.error(f"Together AI query error: {e}")
-            return f"I encountered an error: {str(e)}"
+            logger.error(f"Fallback model error: {e}")
+            return None
     
     def _query_gemini(self, query: str) -> Optional[str]:
         """Query Google Gemini API."""
         try:
-            import google.generativeai as genai
+            import google.generativeai as genai  # type: ignore
             
             if not GEMINI_API_KEY:
                 logger.error("GEMINI_API_KEY not set")
@@ -249,7 +256,7 @@ JARVIS:"""
     def _query_groq(self, query: str) -> Optional[str]:
         """Query Groq LLM."""
         try:
-            from groq import Groq
+            from groq import Groq  # type: ignore
             
             if not GROQ_API_KEY:
                 logger.error("GROQ_API_KEY not set")

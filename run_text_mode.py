@@ -35,7 +35,7 @@ def main():
         response_handler = ResponseHandler(speech_engine)
         
         # Register skills
-        from jarvis.skills import basic, weather, system, scrape, web
+        from jarvis.skills import basic, weather, system, scrape, web, file_manager, app_control, system_commands
         
         brain.register_skill(
             "basic",
@@ -65,6 +65,24 @@ def main():
             "web",
             web.handle,
             keywords=["google", "youtube", "search", "play", "open", "visit", "website", "github", "stackoverflow"]
+        )
+        
+        brain.register_skill(
+            "file_manager",
+            file_manager.handle,
+            keywords=["create file", "delete file", "rename file", "create folder", "delete folder", "list files"]
+        )
+        
+        brain.register_skill(
+            "app_control",
+            app_control.handle,
+            keywords=["close tab", "close window", "switch window", "notepad", "calculator", "minimize", "maximize"]
+        )
+        
+        brain.register_skill(
+            "system_commands",
+            system_commands.handle,
+            keywords=["execute", "run command", "system command"]
         )
         
         # Greeting

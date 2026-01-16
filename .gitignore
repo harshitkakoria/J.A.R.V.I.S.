@@ -62,4 +62,6 @@ jarvis/resources/voices/*
 .coverage
 htmlcov/
 .pytest_cache/
+test_*.py
+*_test.py
 
