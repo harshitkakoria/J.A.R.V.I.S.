@@ -26,6 +26,9 @@ def handle(query: str) -> Optional[str]:
         # Check if it's a common program
         if any(app in query_lower for app in ["notepad", "calculator", "paint", "cmd", "powershell", "explorer", "task manager"]):
             return open_program(query)
+        # Try to open from desktop if not a common program
+        else:
+            return open_desktop_app(query)
     
     # Close tab (keyboard shortcut)
     # Match "close" + "tab" even if separated by words like "all the"
@@ -51,7 +54,64 @@ def handle(query: str) -> Optional[str]:
     return None
 
 
-def open_program(query: str) -> str:
+def open_desktop_app(query: str) -> str:
+    """
+    Open an app from Desktop by searching for shortcuts and executables.
+    
+    Args:
+        query: User command (e.g., "open vlc", "launch photoshop")
+        
+    Returns:
+        Result message
+    """
+    try:
+        import os
+        import glob
+        
+        # Get username and construct desktop path
+        username = os.getenv('USERNAME')
+        desktop_path = f"C:\\Users\\{username}\\Desktop"
+        
+        if not os.path.exists(desktop_path):
+            return "Desktop folder not found"
+        
+        # Extract app name from query
+        query_lower = query.lower()
+        for kw in ["open", "launch", "start", "run"]:
+            query_lower = query_lower.replace(kw, "").strip()
+        app_name = query_lower.strip()
+        
+        if not app_name:
+            return "Please specify an app name to open"
+        
+        # Search for shortcuts (.lnk) first, then executables (.exe)
+        shortcuts = glob.glob(f"{desktop_path}/*.lnk")
+        executables = glob.glob(f"{desktop_path}/*.exe")
+        all_items = shortcuts + executables
+        
+        # Find matching app (case-insensitive)
+        for item_path in all_items:
+            item_name = os.path.splitext(os.path.basename(item_path))[0].lower()
+            if app_name in item_name or item_name in app_name:
+                # Found a match
+                subprocess.Popen(item_path, shell=True)
+                logger.info(f"Opened desktop app: {item_path}")
+                return f"Opening {item_name}"
+        
+        # No match found, list available apps
+        available_apps = [os.path.splitext(os.path.basename(item))[0] for item in all_items]
+        if available_apps:
+            apps_list = ", ".join(available_apps[:5])  # Show first 5
+            return f"App '{app_name}' not found on desktop. Available: {apps_list}"
+        else:
+            return f"No apps found on desktop"
+        
+    except Exception as e:
+        logger.error(f"Open desktop app error: {e}")
+        return f"Failed to open app: {str(e)}"
+
+
+
     """Open a program."""
     try:
         import pyautogui

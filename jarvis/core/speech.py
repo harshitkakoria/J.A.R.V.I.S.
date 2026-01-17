@@ -117,8 +117,8 @@ class SpeechEngine:
         try:
             with self.microphone as source:
                 logger.debug("Adjusting for ambient noise...")
-                # Quick noise adjustment (settings already configured in __init__)
-                self.recognizer.adjust_for_ambient_noise(source, duration=0.5)
+                # Longer noise adjustment for better calibration
+                self.recognizer.adjust_for_ambient_noise(source, duration=1)
                 
                 logger.debug("Listening for speech...")
                 audio = self.recognizer.listen(
@@ -129,32 +129,36 @@ class SpeechEngine:
             
             logger.debug("Processing audio with Google Speech Recognition...")
             
-            # Try with retry logic for robustness
-            try:
-                text = self.recognizer.recognize_google(audio)
-                logger.info(f"✓ Recognized: {text}")
-                return text.lower()
-            except sr.UnknownValueError as e:
-                # Audio detected but not recognized - could be too quiet or unclear
-                logger.warning(f"❓ Could not understand audio clearly")
-                logger.debug(f"   Audio captured but recognition failed: {e}")
-                logger.info("   Suggestions:")
-                logger.info("   • Speak louder or closer to microphone")
-                logger.info("   • Reduce background noise")
-                logger.info("   • Speak at normal pace")
-                return None
+            # Try with retry logic for robustness (up to 3 attempts)
+            for attempt in range(3):
+                try:
+                    text = self.recognizer.recognize_google(audio)
+                    logger.info(f"✓ Recognized: {text}")
+                    return text.lower()
+                except sr.UnknownValueError as e:
+                    if attempt < 2:
+                        logger.debug(f"Recognition attempt {attempt + 1} failed, retrying...")
+                        continue
+                    # All attempts failed
+                    logger.warning(f"❓ Could not understand audio clearly after {attempt + 1} attempts")
+                    logger.info("   Suggestions:")
+                    logger.info("   • Speak louder or closer to microphone")
+                    logger.info("   • Reduce background noise")
+                    logger.info("   • Speak at normal pace")
+                    return None
+                except sr.RequestError as e:
+                    # Network error, don't retry
+                    if "Failed to connect" in str(e) or "HTTPSConnectionPool" in str(e):
+                        logger.error(f"🌐 No internet connection - cannot use Google Speech Recognition")
+                        logger.info("   Solutions:")
+                        logger.info("   1. Check your internet connection")
+                        logger.info("   2. Use text mode: run_text_mode.bat")
+                    else:
+                        logger.error(f"Speech Recognition API error: {e}")
+                    return None
             
         except sr.WaitTimeoutError:
             logger.debug("⏱ Timeout - no speech detected (silent for too long)")
-            return None
-        except sr.RequestError as e:
-            if "Failed to connect" in str(e) or "HTTPSConnectionPool" in str(e):
-                logger.error(f"🌐 No internet connection - cannot use Google Speech Recognition")
-                logger.info("   Solutions:")
-                logger.info("   1. Check your internet connection")
-                logger.info("   2. Use text mode: run_text_mode.bat")
-            else:
-                logger.error(f"Speech Recognition API error: {e}")
             return None
         except Exception as e:
             logger.error(f"Unexpected error during speech recognition: {e}")

@@ -21,7 +21,7 @@
 - "show files" → Lists folders and files
 
 ### 🪟 Application Control
-**Open Programs:**
+**Open Built-in Programs:**
 - "open notepad" → Opens Notepad
 - "launch calculator" → Opens Calculator
 - "start paint" → Opens Paint
@@ -30,9 +30,19 @@
 - "open explorer" → Opens File Explorer
 - "open task manager" → Opens Task Manager
 
+**Open Apps from Desktop:**
+- "open vlc" → Opens VLC (if on desktop)
+- "launch google chrome" → Opens Chrome (if on desktop)
+- "start photoshop" → Opens Photoshop (if on desktop)
+- "run spotify" → Opens Spotify (if on desktop)
+- ℹ️ Searches desktop for .lnk shortcuts and .exe files
+
 **Window Management:**
 - "close tab" → Closes current tab (Ctrl+W)
+- "close all the tabs" → Closes all tabs
+- "close this tab" → Closes current tab
 - "close window" → Closes current window (Alt+F4)
+- "close the window" → Closes current window
 - "switch window" → Switches to next window (Alt+Tab)
 - "minimize" → Minimizes current window
 - "maximize" → Maximizes current window
@@ -71,8 +81,10 @@
 - "Temperature"
 
 ### 📸 Screenshots
-- "Take a screenshot"
-- "Capture screen"
+- "Take a screenshot" → Saves to OneDrive\Pictures\Screenshots
+- "Capture screen" → Saves to OneDrive\Pictures\Screenshots
+- ℹ️ Automatically creates folder if it doesn't exist
+- ℹ️ Files saved with timestamp: screenshot_20260117_121545.png
 
 ### 🔊 Volume Control
 - "Increase volume"
@@ -136,8 +148,11 @@
 "create file notes.txt"
 "list files"
 "open notepad"
-"close tab"
+"open vlc"
+"close all the tabs"
 "take a screenshot"
+"who is iron man"
+"what's the weather today"
 ```
 
 ### Operations Requiring Confirmation:
@@ -145,6 +160,7 @@
 "delete file test.txt confirm"
 "run command dir confirm"
 "shutdown yes"
+"restart confirm"
 ```
 
 ### What's Blocked:
@@ -152,6 +168,19 @@
 "delete file System32" → ❌ Blocked (system file)
 "run command format C:" → ❌ Blocked (dangerous keyword)
 "delete file test.txt" → ❌ Requires "confirm"
+```
+
+### Natural Language Variations (All Work):
+```
+"close the tab"
+"close this tab"
+"close all the tabs"
+"close my tabs"
+"can you close these tabs"
+
+"who is albert einstein"
+"tell me about albert einstein"
+"what is albert einstein"
 ```
 
 ---
@@ -199,18 +228,32 @@ run_text_mode.bat
 ## 🆘 Troubleshooting
 
 **If voice recognition fails:**
-- Check internet connection
-- Speak louder/clearer
-- Use text mode: `run_text_mode.bat`
+- Check internet connection (Google Speech API requires internet)
+- Speak louder or closer to microphone
+- Reduce background noise
+- Speak at normal pace
+- Use text mode: `run_text_mode.bat` as alternative
+
+**Speech Recognition Tips:**
+- Full sentences are captured (up to 8 seconds of speech)
+- Pauses up to 1.5 seconds between words are allowed
+- System auto-retries 3 times if recognition fails
+- "Jarvis" wake word detection (if enabled) uses 5-second timeout
 
 **If confirmation is required:**
 - Add "confirm" or "yes" to dangerous commands
 - Example: "shutdown confirm" not just "shutdown"
+- Example: "delete file test.txt confirm" not just "delete file test.txt"
 
 **To cancel shutdown:**
 - Open Command Prompt
 - Type: `shutdown /a`
 - Press Enter within 10 seconds
+
+**Desktop apps not opening:**
+- Make sure app is on Desktop (shortcut or executable)
+- Check app name spelling
+- Try opening from built-in programs list instead
 
 ---
 
