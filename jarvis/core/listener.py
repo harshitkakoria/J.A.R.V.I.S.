@@ -44,7 +44,7 @@ class Listener:
         max_attempts = timeout if timeout > 0 else 999999  # Large number for "infinite"
         
         while attempts < max_attempts:
-            text = self.speech_engine.listen(timeout=2, phrase_time_limit=3)
+            text = self.speech_engine.listen(timeout=3, phrase_time_limit=5)
             if text and self.wake_word in clean_text(text):
                 logger.info(f"✓ Wake word '{self.wake_word}' detected!")
                 return True

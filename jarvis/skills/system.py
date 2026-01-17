@@ -42,8 +42,8 @@ def take_screenshot() -> str:
         import pyautogui
         from datetime import datetime
         
-        # Create screenshots directory
-        screenshot_dir = "screenshots"
+        # Use user's OneDrive Screenshots folder
+        screenshot_dir = r"C:\Users\Harshit\OneDrive\Pictures\Screenshots"
         if not os.path.exists(screenshot_dir):
             os.makedirs(screenshot_dir)
         
@@ -55,7 +55,7 @@ def take_screenshot() -> str:
         pyautogui.screenshot(filename)
         logger.info(f"Screenshot saved: {filename}")
         
-        return f"Screenshot taken and saved to {filename}"
+        return f"Screenshot saved successfully"
         
     except ImportError:
         logger.error("pyautogui library not available")

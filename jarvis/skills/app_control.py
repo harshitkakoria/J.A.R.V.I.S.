@@ -28,11 +28,12 @@ def handle(query: str) -> Optional[str]:
             return open_program(query)
     
     # Close tab (keyboard shortcut)
-    if any(kw in query_lower for kw in ["close tab", "close this tab", "close current tab"]):
+    # Match "close" + "tab" even if separated by words like "all the"
+    if ("close" in query_lower and "tab" in query_lower) or any(kw in query_lower for kw in ["close tab", "close this tab", "close current tab"]):
         return close_tab()
     
     # Close window
-    if any(kw in query_lower for kw in ["close window", "close this window"]):
+    if ("close" in query_lower and "window" in query_lower) or any(kw in query_lower for kw in ["close window", "close this window"]):
         return close_window()
     
     # Switch window (Alt+Tab)

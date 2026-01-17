@@ -35,6 +35,13 @@ class SpeechEngine:
         self.recognizer = sr.Recognizer()
         self.microphone = None
         
+        # Optimize recognizer settings for full sentence capture
+        self.recognizer.energy_threshold = 3000  # Sensitive to quiet speech
+        self.recognizer.dynamic_energy_threshold = True  # Auto-adjust to environment
+        self.recognizer.phrase_threshold = 0.1  # Low threshold for phrase detection
+        self.recognizer.pause_threshold = 1.5  # Wait 1.5 seconds before stopping (captures full sentences)
+        self.recognizer.non_speaking_duration = 0.3  # Quick detection of speech start
+        
         try:
             self.microphone = sr.Microphone()
             with self.microphone as source:
@@ -109,16 +116,9 @@ class SpeechEngine:
         
         try:
             with self.microphone as source:
-                # Optimize recognizer settings for better accuracy
-                self.recognizer.energy_threshold = 3000  # More lenient with quiet speech
-                self.recognizer.dynamic_energy_threshold = True  # Auto-adjust to environment
-                self.recognizer.phrase_threshold = 0.1  # Lower threshold (default 0.3)
-                self.recognizer.pause_threshold = 1.0  # Wait 1 second of silence before stopping (default 0.8)
-                self.recognizer.non_speaking_duration = 0.5  # Minimum silence duration (default 0.5)
-                
                 logger.debug("Adjusting for ambient noise...")
-                # Longer noise adjustment for better calibration
-                self.recognizer.adjust_for_ambient_noise(source, duration=1)
+                # Quick noise adjustment (settings already configured in __init__)
+                self.recognizer.adjust_for_ambient_noise(source, duration=0.5)
                 
                 logger.debug("Listening for speech...")
                 audio = self.recognizer.listen(
