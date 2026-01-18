@@ -86,3 +86,36 @@ def extract_query_after_keyword(query: str, keyword: str) -> str:
         return after
     
     return ""
+
+
+def sanitize_search_term(text: str) -> str:
+    """
+    Sanitize a search term for external lookups (e.g., Wikipedia).
+    - Strips trailing punctuation like ?, !, .
+    - Removes enclosing quotes
+    - Collapses whitespace
+    - Keeps original casing except trimming
+    
+    Args:
+        text: Raw search term
+    
+    Returns:
+        Cleaned search term
+    """
+    if not text:
+        return ""
+
+    # Trim whitespace
+    s = text.strip()
+
+    # Remove enclosing quotes
+    if (s.startswith("\"") and s.endswith("\"")) or (s.startswith("'") and s.endswith("'")):
+        s = s[1:-1].strip()
+
+    # Strip trailing punctuation commonly added in questions
+    s = re.sub(r"[\?\!\.\,]+$", "", s)
+
+    # Collapse internal whitespace
+    s = re.sub(r"\s+", " ", s)
+
+    return s

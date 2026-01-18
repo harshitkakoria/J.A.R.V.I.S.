@@ -46,9 +46,10 @@ def register_skills(brain: Brain):
         ("weather", ["weather", "temperature", "forecast", "rain", "hot", "cold", "climate"]),
         ("system", ["screenshot", "shutdown", "restart", "reboot", "volume", "mute", "quiet", "loud"]),
         ("scrape", ["news", "headline", "gold", "stock", "market", "price"]),
-        ("web", ["google", "youtube", "search", "play", "open", "visit", "website", "github", "stackoverflow"]),
+        ("youtube", ["youtube", "play", "play video", "play music", "play song", "watch", "search", "search youtube", "find", "look for", "youtube channel", "trending", "subscriptions"]),
+        ("app_control", ["chrome", "google chrome", "vlc", "close tab", "close this tab", "close the tab", "close these tabs", "close all tabs", "close window", "close this window", "close the window", "switch window", "minimize", "maximize", "notepad", "calculator", "paint", "explorer", "task manager"]),
+        ("web", ["google search", "search", "browse", "visit", "website", "github", "stackoverflow"]),
         ("file_manager", ["create file", "delete file", "rename file", "create folder", "delete folder", "list files", "show files"]),
-        ("app_control", ["close tab", "close window", "switch window", "minimize", "maximize", "notepad", "calculator", "paint", "explorer", "task manager"]),
         ("system_commands", ["execute", "run command", "system command"]),
     ]
     
@@ -58,6 +59,15 @@ def register_skills(brain: Brain):
             skills_to_register.append((skill_name, skill_module.handle, keywords))
         except (ImportError, AttributeError) as e:
             logger.debug(f"Skill '{skill_name}' not available: {e}")
+    
+    # Real-time search engine skill
+    try:
+        from jarvis.utils.realtime_search_engine import RealtimeSearchEngine
+        search_engine = RealtimeSearchEngine()
+        skills_to_register.append(("realtime_search", search_engine.search, ["latest", "current", "recent", "today", "breaking", "real time", "right now", "search for", "find out"]))
+        logger.info("Real-time search engine registered")
+    except Exception as e:
+        logger.debug(f"Real-time search engine not available: {e}")
     
     # Register all available skills
     for skill_name, handler, keywords in skills_to_register:
@@ -112,6 +122,10 @@ def main():
                 else:
                     logger.info("Ready for command...")
                 
+                # Small delay to let microphone settle after previous interaction
+                import time
+                time.sleep(0.5)
+                
                 # Capture command
                 logger.debug("Listening for command...")
                 command = listener.capture_command(timeout=5)
@@ -139,9 +153,15 @@ def main():
                 
                 # Respond with TTS
                 if response:
+                    logger.info(f"JARVIS: {response}")
                     response_handler.respond(response)
+                    # Wait for TTS to complete before listening again
+                    import time
+                    time.sleep(0.5)  # Let TTS finish and microphone settle
                 else:
                     response_handler.respond("I didn't understand that. Could you rephrase?")
+                    import time
+                    time.sleep(0.5)
                     
             except KeyboardInterrupt:
                 logger.info("Interrupted by user (Ctrl+C)")

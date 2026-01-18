@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Speech Recognition</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    button { padding: 10px 16px; margin-right: 8px; }
+    #output { margin-top: 16px; min-height: 40px; border: 1px solid #ccc; padding: 8px; }
+  </style>
+</head>
+<body>
+  <button id="start" onclick="startRecognition()">Start Recognition</button>
+  <button id="end" onclick="stopRecognition()">Stop Recognition</button>
+  <p id="output"></p>
+  <script>
+    const output = document.getElementById('output');
+    let recognition;
+
+    function getLang() {
+      const params = new URLSearchParams(window.location.search);
+      return params.get('lang') || 'en-US';
+    }
+
+    function startRecognition() {
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SR) {
+        output.textContent = 'error: speech api unsupported';
+        return;
+      }
+      recognition = new SR();
+      recognition.lang = getLang();
+      recognition.continuous = true;
+      recognition.interimResults = false;
+
+      recognition.onresult = function (event) {
+        const res = event.results[event.results.length - 1];
+        if (res && res[0]) {
+          output.textContent += res[0].transcript;
+        }
+      };
+
+      recognition.start();
+    }
+
+    function stopRecognition() {
+      try { recognition && recognition.stop(); } catch(e) {}
+    }
+  </script>
+</body>
+</html>

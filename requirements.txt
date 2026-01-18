@@ -1,18 +1,19 @@
 # Core dependencies for JARVIS
 # Install with: pip install -r requirements.txt
 
-# Speech Recognition & Text-to-Speech
-speechrecognition>=3.10.0
-pyttsx3>=2.90
-pyaudio>=0.2.11
+# Speech Recognition & Text-to-Speech (Selenium + Web Speech API only)
+edge-tts>=6.1.8
+pygame>=2.5.2
 
 # LLM Integration
 google-generativeai>=0.3.0
 groq>=0.4.0
 openai>=1.0.0
+cohere>=5.0.0
 
 # Web & Automation
 selenium>=4.15.0
+webdriver-manager>=3.8.6
 beautifulsoup4>=4.12.0
 requests>=2.31.0
 pywhatkit>=5.4
@@ -22,11 +23,11 @@ pyautogui>=0.9.54
 pycaw>=20230407
 
 # Audio Processing
-sounddevice>=0.4.6
 numpy>=1.24.0
 
 # Utilities
 python-dotenv>=1.0.0
 wikipedia>=1.4.0
 pyjokes>=0.6.0
-
+rich>=13.0.0
+mtranslate>=1.8

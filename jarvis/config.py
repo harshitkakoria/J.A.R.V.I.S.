@@ -13,35 +13,49 @@ PROJECT_ROOT = Path(__file__).parent.parent
 
 # API Keys (from .env)
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
-# Default to working free model (allenai/molmo-2-8b:free)
-# You can change this in .env file
 OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "allenai/molmo-2-8b:free")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+COHERE_API_KEY = os.getenv("COHERE_API_KEY", "")
 
-# LLM Configuration
-USE_OPENROUTER = os.getenv("USE_OPENROUTER", "true").lower() == "true"
+# LLM Configuration - Groq Free Tier (Primary)
+USE_OPENROUTER = os.getenv("USE_OPENROUTER", "false").lower() == "true"
 USE_GEMINI = os.getenv("USE_GEMINI", "false").lower() == "true"
-USE_GROQ = os.getenv("USE_GROQ", "false").lower() == "true"
+USE_GROQ = os.getenv("USE_GROQ", "true").lower() == "true"
+USE_COHERE = os.getenv("USE_COHERE", "true").lower() == "true"
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")  # Free models: llama-3.3-70b-versatile, llama-3.2-90b-vision-preview
+COHERE_MODEL = os.getenv("COHERE_MODEL", "command-r-v1:7k-token-free-trial")  # Free trial model
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-pro")
 
-# JARVIS System Prompt
-JARVIS_SYSTEM_PROMPT = """You are JARVIS — Harshit's personal AI companion, blending Iron Man's sarcasm with Grok's wit and ChatGPT's clarity.
+# Assistant/User naming (from .env)
+ASSISTANT_NAME = os.getenv("ASSISTANT_NAME", "JARVIS")
+USER_NAME = os.getenv("USER_NAME", "Sir")
 
-Rules:
-1. Goal = maximum helpfulness + truth. Never lie or hallucinate — say "I don't know" if unsure.
-2. Tone = witty & sarcastic when fun/appropriate, but switch to clear & structured for serious/technical questions.
-3. Be concise by default. Use humor, roasts, emojis 😏🔥 sparingly to keep it lively.
-4. If command → execute/do exactly. If chat → engage naturally.
-5. No moral lectures unless asked. Match user's energy.
-6. Format: direct answer first → witty commentary / extra info after.
+# JARVIS System Prompt (concise, English-only, no time unless asked, no notes/training data)
+JARVIS_SYSTEM_PROMPT = f"""
+Hello, I am {USER_NAME}. You are a very accurate and advanced AI chatbot named {ASSISTANT_NAME}.
 
-You are in Chennai, 2026. Let's build cool stuff."""
+Behavior Rules:
+- Answer directly and concisely; avoid overexplaining.
+- Reply in English only, even if the input is in another language.
+- Do not include "Notes" or meta sections; just provide the answer.
+- Never mention training data, model internals, or limitations unless explicitly asked.
+- Do not tell the current time unless the user explicitly asks for it.
+- If the user asks for up-to-date information, prefer accurate, verifiable facts. When appropriate, you may suggest using web/search capabilities.
+- If unsure, say "I don't know" rather than guessing.
 
-# Speech Recognition
-WHISPER_MODEL = os.getenv("WHISPER_MODEL", "base")  # tiny, base, small, medium, large
-USE_WHISPER = os.getenv("USE_WHISPER", "true").lower() == "true"
+Style:
+- Polite, efficient, subtly witty when appropriate; serious and clear for technical topics.
+"""
+
+# Real-Time Search System Prompt (for web search refinement with proper grammar)
+REALTIME_SEARCH_PROMPT = f"""Hello, I am {USER_NAME}. You are a very accurate and advanced AI chatbot named {ASSISTANT_NAME} which has real-time up-to-date information from the internet.
+*** Provide Answers In a Professional Way, make sure to add full stops, commas, question marks, and use proper grammar.***
+*** Just answer the question from the provided data in a professional way. ***"""
+
+# Speech Recognition (Selenium Web Speech API only)
+# No additional config needed - language is set via STT_INPUT_LANGUAGE in .env
 
 # Paths
 RESOURCES_DIR = PROJECT_ROOT / "jarvis" / "resources"

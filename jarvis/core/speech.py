@@ -1,11 +1,13 @@
 """
 Speech-to-Text (STT) and Text-to-Speech (TTS) functionality.
+STT: Selenium + Chrome Web Speech API
+TTS: Edge TTS
 """
-import pyttsx3
-import speech_recognition as sr
-from typing import Optional
+import threading
+import platform
+from typing import Optional, Callable
 from jarvis.utils.logger import setup_logger
-from jarvis.config import USE_WHISPER, WHISPER_MODEL
+from dotenv import dotenv_values
 
 logger = setup_logger(__name__)
 
@@ -13,95 +15,63 @@ logger = setup_logger(__name__)
 class SpeechEngine:
     """Handles both STT and TTS operations."""
     
-    def __init__(self, rate: int = 150, volume: float = 0.9, voice_id: int = 0):
+    def __init__(self, rate: int = 150, volume: float = 0.9, voice_id: int = 0, use_selenium_stt: bool = True):
         """
         Initialize speech engine.
         
         Args:
-            rate: Speech rate (words per minute)
-            volume: Volume level (0.0 to 1.0)
-            voice_id: Voice index
+            rate: Speech rate (words per minute) - unused, for compatibility
+            volume: Volume level (0.0 to 1.0) - unused, for compatibility
+            voice_id: Voice index - unused, for compatibility
+            use_selenium_stt: Always True (only STT method)
         """
-        # Initialize TTS
+        self.selenium_stt = None
+        
+        # Initialize Edge TTS
         try:
-            self.tts_engine = pyttsx3.init()
-            self.set_voice_properties(rate, volume, voice_id)
-            logger.info("TTS engine initialized successfully")
+            from jarvis.core.TextToSpeech import TextToSpeech
+            self.tts_engine = TextToSpeech()
+            logger.info("Edge TTS initialized")
         except Exception as e:
-            logger.error(f"Failed to initialize TTS: {e}")
+            logger.error(f"Failed to initialize Edge TTS: {e}")
             self.tts_engine = None
         
-        # Initialize STT
-        self.recognizer = sr.Recognizer()
-        self.microphone = None
-        
-        # Optimize recognizer settings for full sentence capture
-        self.recognizer.energy_threshold = 3000  # Sensitive to quiet speech
-        self.recognizer.dynamic_energy_threshold = True  # Auto-adjust to environment
-        self.recognizer.phrase_threshold = 0.1  # Low threshold for phrase detection
-        self.recognizer.pause_threshold = 1.5  # Wait 1.5 seconds before stopping (captures full sentences)
-        self.recognizer.non_speaking_duration = 0.3  # Quick detection of speech start
-        
+        # Initialize Selenium STT
         try:
-            self.microphone = sr.Microphone()
-            with self.microphone as source:
-                self.recognizer.adjust_for_ambient_noise(source, duration=1)
-            logger.info("Microphone initialized successfully")
+            from jarvis.core.SeleniumSTT import SeleniumSTT
+            env_config = dotenv_values()
+            stt_language = env_config.get("STT_INPUT_LANGUAGE", "en")
+            self.selenium_stt = SeleniumSTT(headless=True, language=stt_language, timeout=10)
+            logger.info(f"Selenium STT initialized (Web Speech API, headless) - Language: {stt_language}")
         except Exception as e:
-            logger.warning(f"Microphone initialization failed: {e}")
+            logger.error(f"Failed to initialize Selenium STT: {e}")
+            self.selenium_stt = None
     
-    def set_voice_properties(self, rate: int = None, volume: float = None, voice_id: int = None):
-        """Set TTS voice properties."""
-        if not self.tts_engine:
-            return
-        
-        if rate is not None:
-            self.tts_engine.setProperty('rate', rate)
-        if volume is not None:
-            self.tts_engine.setProperty('volume', volume)
-        if voice_id is not None:
-            voices = self.tts_engine.getProperty('voices')
-            if voices and voice_id < len(voices):
-                self.tts_engine.setProperty('voice', voices[voice_id].id)
-    
-    def speak(self, text: str) -> None:
+    def speak(self, text: str, threaded: bool = False) -> Optional[threading.Thread]:
         """
-        Convert text to speech and speak it.
+        Convert text to speech using Edge TTS with male voice.
         
         Args:
             text: Text to speak
+            threaded: If True, speak in background thread (non-blocking)
+            
+        Returns:
+            Thread object if threaded=True, None otherwise
         """
         if not self.tts_engine:
-            print(f"JARVIS: {text}")  # Fallback to print
-            return
+            print(f"JARVIS: {text}")
+            return None
         
         try:
-            logger.info(f"Speaking: {text}")
-            self.tts_engine.say(text)
-            self.tts_engine.runAndWait()
-            # Add small delay to ensure clean audio output
-            import time
-            time.sleep(0.2)
+            return self.tts_engine.speak(text, threaded=threaded)
         except Exception as e:
             logger.error(f"Error in TTS: {e}")
-            print(f"JARVIS: {text}")  # Fallback to print
-            # Try to reinitialize TTS engine
-            try:
-                self.tts_engine.stop()
-            except:
-                pass
-            try:
-                self.tts_engine = pyttsx3.init()
-                self.set_voice_properties(150, 0.9, 0)
-                logger.info("TTS engine reinitialized")
-            except Exception as reinit_error:
-                logger.error(f"Failed to reinitialize TTS: {reinit_error}")
-                self.tts_engine = None
+            print(f"JARVIS: {text}")
+            return None
     
     def listen(self, timeout: int = 5, phrase_time_limit: int = 5) -> Optional[str]:
         """
-        Listen for speech and convert to text using Google Speech Recognition.
-        Optimized with better noise handling and retries.
+        Listen for speech and convert to text using Selenium Web Speech API.
         
         Args:
             timeout: Seconds to wait for speech
@@ -110,56 +80,27 @@ class SpeechEngine:
         Returns:
             Recognized text or None
         """
-        if not self.microphone:
-            logger.error("Microphone not available")
+        # Audible cue: start listening (Windows only)
+        try:
+            if platform.system() == "Windows":
+                import winsound
+                winsound.Beep(800, 150)  # frequency, duration(ms)
+        except Exception:
+            pass
+
+        # Use Selenium STT
+        if not self.selenium_stt:
+            logger.error("Selenium STT not initialized")
             return None
         
+        result = self.selenium_stt.listen(timeout=timeout, phrase_time_limit=phrase_time_limit)
+        
+        # Audible cue: stop listening (Windows only)
         try:
-            with self.microphone as source:
-                logger.debug("Adjusting for ambient noise...")
-                # Longer noise adjustment for better calibration
-                self.recognizer.adjust_for_ambient_noise(source, duration=1)
-                
-                logger.debug("Listening for speech...")
-                audio = self.recognizer.listen(
-                    source, 
-                    timeout=timeout, 
-                    phrase_time_limit=phrase_time_limit
-                )
-            
-            logger.debug("Processing audio with Google Speech Recognition...")
-            
-            # Try with retry logic for robustness (up to 3 attempts)
-            for attempt in range(3):
-                try:
-                    text = self.recognizer.recognize_google(audio)
-                    logger.info(f"✓ Recognized: {text}")
-                    return text.lower()
-                except sr.UnknownValueError as e:
-                    if attempt < 2:
-                        logger.debug(f"Recognition attempt {attempt + 1} failed, retrying...")
-                        continue
-                    # All attempts failed
-                    logger.warning(f"❓ Could not understand audio clearly after {attempt + 1} attempts")
-                    logger.info("   Suggestions:")
-                    logger.info("   • Speak louder or closer to microphone")
-                    logger.info("   • Reduce background noise")
-                    logger.info("   • Speak at normal pace")
-                    return None
-                except sr.RequestError as e:
-                    # Network error, don't retry
-                    if "Failed to connect" in str(e) or "HTTPSConnectionPool" in str(e):
-                        logger.error(f"🌐 No internet connection - cannot use Google Speech Recognition")
-                        logger.info("   Solutions:")
-                        logger.info("   1. Check your internet connection")
-                        logger.info("   2. Use text mode: run_text_mode.bat")
-                    else:
-                        logger.error(f"Speech Recognition API error: {e}")
-                    return None
-            
-        except sr.WaitTimeoutError:
-            logger.debug("⏱ Timeout - no speech detected (silent for too long)")
-            return None
-        except Exception as e:
-            logger.error(f"Unexpected error during speech recognition: {e}")
-            return None
+            if platform.system() == "Windows":
+                import winsound
+                winsound.Beep(600, 120)
+        except Exception:
+            pass
+        
+        return result

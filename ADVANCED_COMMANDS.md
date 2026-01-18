@@ -214,6 +214,97 @@ run_text_mode.bat
 
 ---
 
+## 🧠 AI COMMAND INTERPRETATION (NEW)
+
+**How It Works:**
+1. **Voice Input** → Converted to text via Google Speech API
+2. **AI Processing** → Text sent to OpenRouter Llama 3 8B
+3. **Command Extraction** → AI interprets intent and extracts parameters
+4. **Automation** → Extracted command executed on system
+5. **Response** → Result spoken back to user via pyttsx3
+
+**Natural Language Examples:**
+```
+"Hey, can you open my files?" 
+→ AI interprets as: open explorer
+→ Executes: explorer.exe
+
+"Please take a picture of my screen and save it"
+→ AI interprets as: take screenshot
+→ Executes: screenshot function
+
+"I want to shut down my computer in a moment"
+→ AI interprets as: shutdown request
+→ Asks for confirmation (safety)
+→ Executes: shutdown /s /t 10
+
+"Can you delete that test file?"
+→ AI interprets as: delete file test.txt
+→ Asks for confirmation
+→ Executes: delete operation
+
+"Show me what's on my desktop"
+→ AI interprets as: list files
+→ Executes: dir command & displays results
+
+"Tell me a joke and then open Notepad"
+→ AI interprets as: tell joke + open notepad
+→ Executes both commands sequentially
+```
+
+---
+
+## 📊 Command Priority (UPDATED)
+
+1. **Voice Input** → Converted to text (Google Speech API)
+2. **AI Interpretation** → Llama 3 8B analyzes intent and extracts commands
+3. **Skill Extraction** → AI identifies which skill to execute
+4. **Confirmation Check** → If dangerous, requires "confirm" or "yes"
+5. **Automation** → Command executed on system
+6. **Logging** → Action logged to jarvis.log
+7. **Response** → Result spoken back via text-to-speech
+
+---
+
+## 🔄 AI PROCESSING EXAMPLES
+
+**Multi-Command Request:**
+```
+User: "Open Chrome and search for Python tutorials, then take a screenshot"
+
+AI Processing:
+1. Detect: open application (chrome)
+2. Detect: web search (python tutorials)
+3. Detect: take screenshot
+4. Execute: chrome → google.com → search → screenshot
+```
+
+**Contextual Understanding:**
+```
+User: "I need to clean up. Delete all my test files"
+
+AI Processing:
+1. Understand: user wants file cleanup
+2. Identify: which files are "test files"
+3. Ask for confirmation: "Found 5 test files. Delete them?"
+4. Execute: delete each with confirmation
+5. Report: "Deleted 5 files successfully"
+```
+
+**Typo Tolerance:**
+```
+User: "opne calcutator" (spoken with accent/typo)
+→ AI corrects to: "open calculator"
+→ Executes: calculator.exe
+
+User: "shdown my pc" (slurred speech)
+→ AI interprets as: "shutdown"
+→ Requires confirmation
+→ Executes: shutdown /s /t 10
+```
+
+---
+
 ## ⚙️ Technical Details
 
 **Voice Recognition:** Google Speech API (requires internet)

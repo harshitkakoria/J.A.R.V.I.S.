@@ -23,8 +23,8 @@ def handle(query: str) -> Optional[str]:
     
     # Open programs
     if any(kw in query_lower for kw in ["open", "launch", "start", "run"]):
-        # Check if it's a common program
-        if any(app in query_lower for app in ["notepad", "calculator", "paint", "cmd", "powershell", "explorer", "task manager"]):
+        # Check if it's a common program (including Chrome and VLC)
+        if any(app in query_lower for app in ["notepad", "calculator", "paint", "cmd", "powershell", "explorer", "task manager", "chrome", "google chrome", "vlc"]):
             return open_program(query)
         # Try to open from desktop if not a common program
         else:
@@ -112,9 +112,11 @@ def open_desktop_app(query: str) -> str:
 
 
 
+
+
+def open_program(query: str) -> str:
     """Open a program."""
     try:
-        import pyautogui
         query_lower = query.lower()
         
         # Program mappings
@@ -130,17 +132,45 @@ def open_desktop_app(query: str) -> str:
             "task manager": "taskmgr.exe",
         }
         
-        # Find which program to open
+        # Special handling for Chrome (search in common locations)
+        if "chrome" in query_lower or "google chrome" in query_lower:
+            chrome_paths = [
+                r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+                r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+                r"C:\Users\Harshit\AppData\Local\Google\Chrome\Application\chrome.exe",
+            ]
+            for chrome_path in chrome_paths:
+                if os.path.exists(chrome_path):
+                    subprocess.Popen(chrome_path, shell=True)
+                    logger.info(f"Opened Chrome: {chrome_path}")
+                    return "Opening Chrome"
+            logger.warning("Chrome not found in common locations")
+            return "Chrome is not installed or not found"
+        
+        # Special handling for VLC (search in common locations)
+        if "vlc" in query_lower:
+            vlc_paths = [
+                r"C:\Program Files\VideoLAN\VLC\vlc.exe",
+                r"C:\Program Files (x86)\VideoLAN\VLC\vlc.exe",
+                r"C:\Users\Harshit\AppData\Local\VideoLAN\VLC\vlc.exe",
+            ]
+            for vlc_path in vlc_paths:
+                if os.path.exists(vlc_path):
+                    subprocess.Popen(vlc_path, shell=True)
+                    logger.info(f"Opened VLC: {vlc_path}")
+                    return "Opening VLC"
+            logger.warning("VLC not found in common locations")
+            return "VLC is not installed or not found"
+        
+        # Find which program to open (standard Windows programs)
         for name, executable in programs.items():
             if name in query_lower:
                 subprocess.Popen(executable, shell=True)
                 logger.info(f"Opened program: {executable}")
                 return f"Opening {name.title()}"
         
-        return "Program not recognized. Try: notepad, calculator, paint, cmd, powershell, explorer, or task manager"
+        return "Program not recognized"
         
-    except ImportError:
-        return "pyautogui not installed"
     except Exception as e:
         logger.error(f"Open program error: {e}")
         return f"Failed to open program: {str(e)}"

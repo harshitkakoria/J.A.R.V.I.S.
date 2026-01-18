@@ -19,6 +19,8 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+pip-log.txt
+pip-delete-this-directory.txt
 
 # Virtual Environment
 venv/
@@ -37,17 +39,55 @@ ENV/
 *.swp
 *.swo
 *~
+*.sublime-project
+*.sublime-workspace
 
 # OS
 .DS_Store
 Thumbs.db
 desktop.ini
 
-# Project specific
+# Logs and temp files
+logs/
+*.log
+*.log.*
+temp/
+tmp/
+
+# Test files and artifacts
+tests/
+test_*.py
+*_test.py
+pytest_cache/
+.pytest_cache/
+.coverage
+
+# Screenshots and recordings
+screenshots/
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.mp4
+
+# Data and cache
 data/memory.json
 data/settings.json
 data/knowledge_base.json
 data/known_faces/
+data/selenium_stt/
+*.db
+*.sqlite
+*.sqlite3
+
+# Node modules (if using npm)
+node_modules/
+package-lock.json
+
+# IDE cache
+.cache/
+*.egg
+.eggs/
 screenshots/
 logs/
 *.log

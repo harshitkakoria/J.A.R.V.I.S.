@@ -1,7 +1,8 @@
 """
 Wake-word detection and command recording.
 """
-from typing import Optional
+import threading
+from typing import Optional, Callable
 from jarvis.core.speech import SpeechEngine
 from jarvis.utils.logger import setup_logger
 from jarvis.utils.helpers import clean_text
@@ -26,17 +27,36 @@ class Listener:
         self.use_wake_word = use_wake_word
         logger.info(f"Listener initialized with wake word: '{self.wake_word}'")
     
-    def wait_for_wake_word(self, timeout: int = 30) -> bool:
+    def wait_for_wake_word(self, timeout: int = 30, threaded: bool = False, callback: Optional[Callable[[bool], None]] = None) -> Optional[threading.Thread]:
         """
         Wait for wake word to be detected.
+        Can run in background thread with callback.
         
         Args:
             timeout: Seconds to wait before giving up (0 = infinite)
+            threaded: If True, run in background thread
+            callback: Function to call with result (True/False) when done
             
         Returns:
-            True if wake word detected, False if timeout
+            Thread object if threaded=True, None otherwise
         """
+        if threaded:
+            thread = threading.Thread(
+                target=self._wait_for_wake_word_impl,
+                args=(timeout, callback),
+                daemon=True
+            )
+            thread.start()
+            logger.debug(f"Started wake word detection in background thread")
+            return thread
+        else:
+            return self._wait_for_wake_word_impl(timeout, callback)
+    
+    def _wait_for_wake_word_impl(self, timeout: int = 30, callback: Optional[Callable[[bool], None]] = None) -> Optional[bool]:
+        """Internal implementation of wake word detection."""
         if not self.use_wake_word:
+            if callback:
+                callback(True)
             return True
         
         logger.debug(f"Waiting for wake word '{self.wake_word}'...")
@@ -47,6 +67,8 @@ class Listener:
             text = self.speech_engine.listen(timeout=3, phrase_time_limit=5)
             if text and self.wake_word in clean_text(text):
                 logger.info(f"✓ Wake word '{self.wake_word}' detected!")
+                if callback:
+                    callback(True)
                 return True
             
             attempts += 1
@@ -54,9 +76,11 @@ class Listener:
                 logger.debug(f"Still waiting for wake word... ({attempts}s)")
         
         logger.warning(f"Timeout waiting for wake word after {timeout} seconds")
+        if callback:
+            callback(False)
         return False
     
-    def capture_command(self, timeout: int = 5) -> Optional[str]:
+    def capture_command(self, timeout: int = 2) -> Optional[str]:
         """
         Capture user command after wake word.
         
@@ -66,9 +90,12 @@ class Listener:
         Returns:
             Captured command text or None
         """
-        logger.debug("Listening for command...")
-        # Increased phrase_time_limit from 5 to 8 seconds for longer sentences
-        command = self.speech_engine.listen(timeout=timeout, phrase_time_limit=8)
+        import time
+        logger.info("🎙️ Listening for command... (speak now)")
+        
+        # Reduced phrase_time_limit from 8 to 3 seconds - ends listening sooner after speech ends
+        # This makes it more responsive to when you finish speaking
+        command = self.speech_engine.listen(timeout=timeout, phrase_time_limit=3)
         
         if command:
             # Remove wake word from command if present
@@ -77,6 +104,7 @@ class Listener:
                 command = command.replace(self.wake_word, "").strip()
             
             if command:  # Make sure there's still text after removing wake word
+                logger.info(f"✓ Command captured: '{command}'")
                 return command
         
         return None

@@ -1,13 +1,16 @@
 """
 Command parser, LLM integration, and decision making.
 """
+import threading
 from typing import Dict, Callable, Optional
+from concurrent.futures import ThreadPoolExecutor
 from jarvis.utils.logger import setup_logger
 from jarvis.utils.helpers import extract_keywords, clean_text
+from jarvis.utils.intent_parser import IntentParser, CommandExecutor
 from jarvis.config import (
     USE_OPENROUTER, USE_GEMINI, USE_GROQ, 
     OPENROUTER_API_KEY, OPENROUTER_MODEL, 
-    GEMINI_API_KEY, GEMINI_MODEL, GROQ_API_KEY,
+    GEMINI_API_KEY, GEMINI_MODEL, GROQ_API_KEY, GROQ_MODEL,
     JARVIS_SYSTEM_PROMPT
 )
 
@@ -15,31 +18,47 @@ logger = setup_logger(__name__)
 
 
 class Brain:
-    """Command dispatcher with keyword matching and LLM fallback."""
+    """Command dispatcher with AI intent parsing and LLM fallback."""
     
-    def __init__(self):
-        """Initialize brain with skill mappings."""
+    def __init__(self, max_workers: int = 4):
+        """Initialize brain with skill mappings and AI intent parser.
+        
+        Args:
+            max_workers: Maximum number of worker threads for parallel skill execution
+        """
         self.skills: Dict[str, Callable[[str], Optional[str]]] = {}
         self.keyword_map: Dict[str, str] = {}  # keyword -> skill_name
-        logger.info("Brain initialized")
+        self.intent_parser = IntentParser()  # AI intent parser
+        self.command_executor = CommandExecutor(brain=self)  # Command executor
+        self.executor = ThreadPoolExecutor(max_workers=max_workers)  # Thread pool for parallel execution
+        self._lock = threading.Lock()  # Lock for thread-safe operations
+        logger.info(f"Brain initialized with AI intent parsing and thread pool ({max_workers} workers)")
     
     def register_skill(self, skill_name: str, handler: Callable[[str], Optional[str]], keywords: list):
         """
         Register a skill with its handler and keywords.
+        Thread-safe registration.
         
         Args:
             skill_name: Name of the skill
             handler: Function that handles the command
             keywords: List of keywords that trigger this skill
         """
-        self.skills[skill_name] = handler
-        for keyword in keywords:
-            self.keyword_map[keyword.lower()] = skill_name
-        logger.debug(f"Registered skill '{skill_name}' with keywords: {keywords}")
+        with self._lock:
+            self.skills[skill_name] = handler
+            for keyword in keywords:
+                self.keyword_map[keyword.lower()] = skill_name
+            logger.debug(f"Registered skill '{skill_name}' with keywords: {keywords}")
     
     def process(self, query: str) -> Optional[str]:
         """
-        Process user query and return response.
+        Process user query with priority: Real-Time Keywords → Keywords → AI Commands → LLM Questions.
+        
+        Priority:
+        1. Real-time query detection (latest, current, breaking news)
+        2. Direct keywords (fast execution)
+        3. AI intent parsing (natural language commands)
+        4. LLM fallback (questions/general info)
         
         Args:
             query: User's spoken command
@@ -52,15 +71,43 @@ class Brain:
         
         query_clean = clean_text(query)
         logger.info(f"Processing query: {query_clean}")
+
+        # Handle very short or unclear queries with a clarification prompt
+        tokens = query_clean.split()
+        if len(tokens) <= 1:
+            ambiguous = {"?", "what", "huh", "uh", "ok", "okay"}
+            if query_clean in ambiguous:
+                return "Could you clarify what you'd like me to do or know?"
         
-        # Try keyword matching first
+        # Step 0: Detect real-time queries BEFORE general keyword matching
+        # This prevents "latest news" from being routed to scrape instead of realtime search
+        realtime_indicators = ["latest", "current", "recent", "today", "breaking", 
+                               "real time", "right now", "find out", "search for"]
+        has_realtime_indicator = any(indicator in query_clean.lower() for indicator in realtime_indicators)
+        
+        if has_realtime_indicator and "realtime_search" in self.skills:
+            logger.debug("Real-time query detected, prioritizing real-time search engine...")
+            handler = self.skills.get("realtime_search")
+            if handler:
+                try:
+                    response = handler(query_clean)
+                    if response:
+                        logger.debug("Real-time search succeeded")
+                        return response
+                    else:
+                        logger.debug("Real-time search returned no results, continuing to other methods...")
+                except Exception as e:
+                    logger.error(f"Real-time search error: {e}")
+                    logger.debug("Falling back to other methods...")
+        
+        # Step 1: Try keyword matching for direct commands (after real-time check)
+        logger.debug("Attempting keyword matching for direct commands...")
         matched_keywords = extract_keywords(query_clean, list(self.keyword_map.keys()))
         
         if matched_keywords:
             # Prioritize more specific action keywords
-            # Priority: system_commands > scrape > system > app_control > file_manager > weather > web > basic
             priority_map = {
-                "system_commands": 8,  # Most dangerous, highest priority
+                "system_commands": 8,
                 "scrape": 7,
                 "system": 6,
                 "app_control": 5,
@@ -86,15 +133,41 @@ class Brain:
             
             if handler:
                 try:
-                    logger.debug(f"Executing skill '{skill_name}' (keyword: '{best_keyword}')")
+                    logger.debug(f"Direct execution: skill '{skill_name}' (keyword: '{best_keyword}')")
                     response = handler(query_clean)
                     return response
                 except Exception as e:
                     logger.error(f"Error executing skill '{skill_name}': {e}")
                     return f"Sorry, I encountered an error: {str(e)}"
         
-        # Fallback to LLM
-        logger.debug("No keyword match, trying LLM fallback")
+        # Step 2: Try AI intent parsing (for unclear natural language commands)
+        logger.debug("Attempting AI intent parsing for natural language...")
+        command = self.intent_parser.parse_command(query_clean)
+        
+        if command and command.get("intent") != "unknown" and command.get("confidence", 0) > 0.5:
+            intent = command.get("intent")
+            logger.debug(f"AI parsed as: {intent} (confidence: {command.get('confidence')})")
+            
+            # If AI thinks it's a question, skip to LLM
+            if intent == "get_info":
+                # Prefer built-in skills for common patterns like Wikipedia queries
+                if any(kw in query_clean for kw in ["who is", "what is", "tell me about", "wikipedia"]):
+                    handler = self.skills.get("basic")
+                    if handler:
+                        return handler(query_clean)
+                logger.debug("AI classified as information question, using LLM...")
+                return self._llm_fallback(query_clean)
+            
+            try:
+                response = self.command_executor.execute(command)
+                if response:
+                    return response
+            except Exception as e:
+                logger.error(f"Error executing AI-parsed command: {e}")
+                logger.debug("Falling back to LLM...")
+        
+        # Step 3: Fallback to LLM for questions and general queries
+        logger.debug("Using LLM for general response...")
         return self._llm_fallback(query_clean)
     
     def _llm_fallback(self, query: str) -> Optional[str]:
@@ -108,18 +181,56 @@ class Brain:
             LLM-generated response
         """
         try:
-            if USE_OPENROUTER:
+            # Groq first (no rate limits on free tier)
+            if USE_GROQ:
+                return self._query_groq(query)
+            # Fallback to OpenRouter
+            elif USE_OPENROUTER:
                 return self._query_openrouter(query)
             elif USE_GEMINI:
                 return self._query_gemini(query)
-            elif USE_GROQ:
-                return self._query_groq(query)
             else:
                 logger.warning("No LLM configured, returning default response")
                 return "I'm not sure how to help with that. Could you rephrase?"
         except Exception as e:
             logger.error(f"LLM fallback error: {e}")
             return "I'm having trouble understanding. Could you try again?"
+
+    def _style_response(self, text: str) -> Optional[str]:
+        """
+        Rephrase plain responses into the JARVIS persona using the configured LLM.
+        Falls back to original text if no LLM is configured or if an error occurs.
+
+        Args:
+            text: Plain response text
+
+        Returns:
+            Styled response or None
+        """
+        if not text:
+            return None
+
+        prompt = (
+            "Rewrite the following answer in the voice of JARVIS — concise, helpful,"
+            " and slightly witty. Keep facts intact.\n\nAnswer:\n" + text
+        )
+
+        try:
+            # Groq first (no rate limits on free tier)
+            if USE_GROQ:
+                return self._query_groq(prompt)
+            # Fallback to OpenRouter
+            elif USE_OPENROUTER:
+                return self._query_openrouter(prompt)
+            elif USE_GEMINI:
+                return self._query_gemini(prompt)
+            elif USE_GROQ:
+                return self._query_groq(prompt)
+            else:
+                return text
+        except Exception as e:
+            logger.error(f"Styling error: {e}")
+            return text
     
     def _query_openrouter(self, query: str) -> Optional[str]:
         """Query OpenRouter API using OpenAI-compatible client."""
@@ -162,14 +273,21 @@ class Brain:
             logger.error("openai library not available. Install with: pip install openai")
             return "OpenAI library not installed. Please install openai."
         except Exception as e:
-            logger.error(f"OpenRouter query error: {e}")
-            # Try fallback models if primary fails
+            error_str = str(e)
+            # Check for rate limit error
+            if "429" in error_str or "rate limit" in error_str.lower():
+                logger.warning(f"OpenRouter rate limited: {e}")
+                logger.info("Switching to Groq (no rate limits)...")
+                # Skip fallback models and go directly to Groq
+                return self._query_groq(query)
+            
+            # Try fallback models for other errors
             fallback_models = [
                 "xiaomi/mimo-v2-flash:free",
                 "nvidia/nemotron-3-nano-30b-a3b:free",
                 "qwen/qwen3-next-80b-a3b-instruct:free"
             ]
-            logger.info("Trying fallback models...")
+            logger.info("Trying fallback OpenRouter models...")
             for fallback_model in fallback_models:
                 try:
                     result = self._query_openrouter_fallback(query, fallback_model)
@@ -178,7 +296,18 @@ class Brain:
                         return result
                 except Exception as fallback_error:
                     logger.debug(f"Fallback '{fallback_model}' failed: {fallback_error}")
+                    # If this fallback also rate limited, switch to Groq
+                    if "429" in str(fallback_error) or "rate limit" in str(fallback_error).lower():
+                        logger.warning("Fallback also rate limited, using Groq...")
+                        return self._query_groq(query)
                     continue
+            
+            # Final fallback: Groq
+            logger.info("Final fallback: using Groq...")
+            groq_response = self._query_groq(query)
+            if groq_response:
+                return groq_response
+            
             return f"I encountered an error: {str(e)}"
     
     def _query_openrouter_fallback(self, query: str, fallback_model: str) -> Optional[str]:
@@ -254,29 +383,130 @@ JARVIS:"""
             return f"I encountered an error: {str(e)}"
     
     def _query_groq(self, query: str) -> Optional[str]:
-        """Query Groq LLM."""
+        """Query Groq LLM using free tier models."""
         try:
             from groq import Groq  # type: ignore
             
             if not GROQ_API_KEY:
                 logger.error("GROQ_API_KEY not set")
-                return None
+                return "I need a Groq API key. Get one free at: https://console.groq.com"
             
             client = Groq(api_key=GROQ_API_KEY)
+            
+            # Use free tier models with fallback
+            model = GROQ_MODEL
+            
             response = client.chat.completions.create(
-                model="llama-3.1-8b-instant",
+                model=model,
                 messages=[
-                    {"role": "system", "content": "You are JARVIS, a helpful AI assistant. Respond concisely."},
+                    {"role": "system", "content": JARVIS_SYSTEM_PROMPT},
                     {"role": "user", "content": query}
                 ],
-                max_tokens=150,
-                temperature=0.7
+                max_tokens=400,
+                temperature=0.3
             )
             
-            return response.choices[0].message.content
+            if response.choices and response.choices[0].message.content:
+                return response.choices[0].message.content.strip()
+            
+            logger.warning("Groq returned empty response")
+            return "I'm not sure how to help with that. Could you rephrase?"
+            
         except ImportError:
-            logger.error("groq library not available")
-            return None
+            logger.error("groq library not available. Install with: pip install groq")
+            return "Groq library not installed. Please install groq."
         except Exception as e:
             logger.error(f"Groq query error: {e}")
+            # Try fallback model
+            try:
+                logger.info("Trying fallback Groq model...")
+                client = Groq(api_key=GROQ_API_KEY)
+                response = client.chat.completions.create(
+                    model="llama-3.3-70b-versatile",
+                    messages=[
+                        {"role": "system", "content": JARVIS_SYSTEM_PROMPT},
+                        {"role": "user", "content": query}
+                    ],
+                    max_tokens=400,
+                    temperature=0.3
+                )
+                if response.choices and response.choices[0].message.content:
+                    return response.choices[0].message.content.strip()
+            except Exception as fallback_error:
+                logger.error(f"Groq fallback error: {fallback_error}")
+            
+            return f"I encountered an error: {str(e)}"
+    
+    def execute_skill_parallel(self, skill_name: str, query: str) -> Optional[str]:
+        """
+        Execute a skill in a background thread (non-blocking).
+        
+        Args:
+            skill_name: Name of the skill to execute
+            query: User query to pass to skill
+            
+        Returns:
+            Future object for the result
+        """
+        if skill_name not in self.skills:
+            logger.warning(f"Skill '{skill_name}' not found")
             return None
+        
+        handler = self.skills[skill_name]
+        logger.debug(f"Submitting skill '{skill_name}' to thread pool for parallel execution")
+        
+        try:
+            future = self.executor.submit(handler, query)
+            return future  # Return future object - caller can call .result() to wait
+        except Exception as e:
+            logger.error(f"Error submitting skill to executor: {e}")
+            return None
+    
+    def execute_multiple_skills(self, skills_list: list, query: str) -> Dict[str, Optional[str]]:
+        """
+        Execute multiple skills in parallel and wait for all to complete.
+        
+        Args:
+            skills_list: List of skill names to execute in parallel
+            query: User query to pass to each skill
+            
+        Returns:
+            Dictionary mapping skill names to their results
+        """
+        futures = {}
+        results = {}
+        
+        logger.info(f"Executing {len(skills_list)} skills in parallel")
+        
+        # Submit all tasks to executor
+        for skill_name in skills_list:
+            if skill_name not in self.skills:
+                logger.warning(f"Skill '{skill_name}' not found")
+                results[skill_name] = None
+                continue
+            
+            try:
+                handler = self.skills[skill_name]
+                future = self.executor.submit(handler, query)
+                futures[skill_name] = future
+            except Exception as e:
+                logger.error(f"Error submitting skill '{skill_name}': {e}")
+                results[skill_name] = None
+        
+        # Wait for all tasks and collect results
+        for skill_name, future in futures.items():
+            try:
+                result = future.result(timeout=10)  # Wait max 10 seconds per skill
+                results[skill_name] = result
+                logger.debug(f"Skill '{skill_name}' completed: {str(result)[:50]}...")
+            except Exception as e:
+                logger.error(f"Error in skill '{skill_name}': {e}")
+                results[skill_name] = None
+        
+        return results
+    
+    def shutdown_executor(self):
+        """Gracefully shutdown the thread pool executor."""
+        logger.info("Shutting down thread pool executor")
+        self.executor.shutdown(wait=True)
+        logger.info("Thread pool executor shut down successfully")
