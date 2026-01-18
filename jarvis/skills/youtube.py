@@ -5,6 +5,7 @@ import webbrowser
 import urllib.parse
 from typing import Optional
 from jarvis.utils.logger import setup_logger
+import pywhatkit
 
 logger = setup_logger(__name__)
 
@@ -73,11 +74,8 @@ def play_video(query: str) -> str:
             search_term = search_term.replace(keyword, "").strip()
         
         if search_term:
-            # URL encode the search term
-            encoded_term = urllib.parse.quote(search_term)
-            # Use /results?search_query= to show search results, user picks video
-            url = f"https://www.youtube.com/results?search_query={encoded_term}"
-            webbrowser.open(url)
+            # Use pywhatkit to play the most popular video automatically
+            pywhatkit.playonyt(search_term)
             logger.info(f"Playing YouTube video: {search_term}")
             return f"Playing '{search_term}' on YouTube"
         else:

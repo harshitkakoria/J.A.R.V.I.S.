@@ -79,35 +79,62 @@ class SeleniumSTT:
 
             # Start recognition
             self.driver.find_element(By.ID, "start").click()
-            logger.info("Listening...")
+            logger.info("Listening (will stop automatically after 2s of silence)...")
+            print("\n🎙️ Listening - speak now (real-time transcription below):")
+            print("-" * 60)
 
-            end_at = now() + max(timeout, phrase_time_limit + 1)
+            # Maximum safety timeout (30 seconds) - but will stop earlier on silence
+            max_timeout = 30
+            end_at = now() + max_timeout
             last_text = ""
+            
             while now() < end_at:
                 try:
+                    # Check status
+                    status = self.driver.find_element(By.ID, "status").text
                     txt = self.driver.find_element(By.ID, "output").text
+                    
+                    # Display real-time transcription
                     if txt and txt != last_text:
+                        # Clear previous line and show updated text
+                        print(f"\r{' ' * 100}\r📝 {txt}", end='', flush=True)
                         last_text = txt
-                        # If we got some text and phrase time has likely passed, stop
-                        if len(txt) > 0:
-                            self.driver.find_element(By.ID, "end").click()
-                            out = txt.strip()
-                            if not out:
-                                break
-                            # Optional translation step
-                            if self.translate or translate_to:
-                                target = (translate_to or "en-us").lower()
-                                try:
-                                    out = mt_translate(out, target)
-                                except Exception as e:
-                                    logger.warning(f"Translation failed: {e}; returning original text")
-                            logger.info(f"✓ Recognized: {out}")
-                            return out
-                    sleep(0.333)
-                except Exception:
-                    sleep(0.333)
+                        # Extend timeout if still speaking
+                        end_at = now() + max_timeout
+                    
+                    # If speech is done (silence detected), return result
+                    if status == 'done' and txt.strip():
+                        print()  # New line after final text
+                        print("-" * 60)
+                        self.driver.find_element(By.ID, "end").click()
+                        out = txt.strip()
+                        
+                        # Optional translation step
+                        if self.translate or translate_to:
+                            target = (translate_to or "en-us").lower()
+                            try:
+                                out = mt_translate(out, target)
+                            except Exception as e:
+                                logger.warning(f"Translation failed: {e}; returning original text")
+                        
+                        logger.info(f"✓ Recognized: {out}")
+                        return out
+                    
+                    sleep(0.2)
+                except Exception as e:
+                    sleep(0.2)
 
-            logger.warning("No speech recognized before timeout")
+            print()  # New line
+            print("-" * 60)
+            logger.warning("Maximum timeout reached (30s)")
+            # Try to get whatever text we have
+            try:
+                txt = self.driver.find_element(By.ID, "output").text
+                if txt.strip():
+                    logger.info(f"✓ Partial recognition: {txt.strip()}")
+                    return txt.strip()
+            except:
+                pass
             return None
         except Exception as e:
             logger.error(f"Speech recognition error: {e}")

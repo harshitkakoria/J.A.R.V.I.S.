@@ -17,8 +17,22 @@ class UserSettings:
     voice_id: int = 0  # Voice index
     language: str = "en"
     city: str = "Chennai"  # Default city for weather/location-based queries
-    name: str = "Sir"  # How JARVIS addresses the user
+    name: str = "Harshit"  # User's name
     use_wake_word: bool = False  # Disabled for easier voice interaction
+    
+    # User Profile - Personalization
+    occupation: str = "Software Developer"  # User's occupation
+    preferences: dict = field(default_factory=lambda: {
+        "news_topics": ["technology", "AI", "business"],
+        "interests": ["coding", "automation", "productivity"],
+        "daily_routine": {
+            "work_start": "09:00",
+            "work_end": "18:00",
+            "preferred_break_time": "15:00"
+        }
+    })
+    timezone: str = "Asia/Kolkata"  # User's timezone
+    relationship: str = "senior"  # User is senior, JARVIS should be formal but not overly so
     
     @classmethod
     def load(cls, settings_file: Optional[Path] = None) -> "UserSettings":

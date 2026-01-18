@@ -1,5 +1,5 @@
 """
-Basic skills: time, joke, wikipedia, exit, who are you.
+Basic skills: time, joke, wikipedia, exit, who are you, reminders.
 """
 from datetime import datetime
 import pyjokes
@@ -35,6 +35,23 @@ def handle(query: str) -> Optional[str]:
         Response text or None
     """
     query_lower = query.lower()
+    
+    # Greetings
+    if any(kw in query_lower for kw in ["hello", "hi", "hey", "good morning", "good afternoon", "good evening", "greetings"]):
+        import random
+        greetings = [
+            "Yes, sir. What can I do for you?",
+            "Hello. How may I help?",
+            "Yes, sir. I'm here.",
+            "Good to hear from you. What do you need?",
+            "Hello. What's on your mind?",
+            "Yes, sir. Go ahead.",
+            "I'm here. What can I help with?",
+            "Hello. What would you like?",
+            "Yes, sir. What's the task?",
+            "At your service. What do you need?"
+        ]
+        return random.choice(greetings)
     
     # Time
     if any(kw in query_lower for kw in ["time", "what time", "current time"]):
@@ -152,13 +169,81 @@ def handle(query: str) -> Optional[str]:
     
     # Who are you
     if any(kw in query_lower for kw in ["who are you", "what are you", "introduce yourself", "your name"]):
-        return ("I am JARVIS, Just A Rather Very Intelligent System. "
-                "I'm your personal AI assistant, ready to help you with various tasks. "
-                "How can I assist you today?")
+        import random
+        intros = [
+            "I am JARVIS, Just A Rather Very Intelligent System. I serve as your personal AI assistant.",
+            "I am JARVIS, your virtual assistant designed to help with various tasks and information.",
+            "JARVIS here - Just A Rather Very Intelligent System. I am programmed to assist you efficiently.",
+            "I am JARVIS, an artificial intelligence assistant at your disposal.",
+            "JARVIS, your dedicated AI assistant. I am here to provide comprehensive support."
+        ]
+        return random.choice(intros)
     
     # Exit/Bye
     if any(kw in query_lower for kw in ["exit", "bye", "goodbye", "quit", "shut down", "stop"]):
         return "Goodbye! Have a great day!"
     
     # Not handled
+    return None
+
+
+def handle_reminder(query: str, brain=None) -> Optional[str]:
+    """
+    Handle reminders, notifications, and tasks.
+    Requires brain object for task scheduler access.
+    
+    Args:
+        query: User query
+        brain: Brain instance with task scheduler
+        
+    Returns:
+        Response confirming task was added
+    """
+    if not brain or not hasattr(brain, 'task_scheduler'):
+        return None
+    
+    query_lower = query.lower()
+    
+    # Check for reminder/notification keywords
+    is_reminder = any(kw in query_lower for kw in ["remind", "remember", "notification", "notify"])
+    is_todo = any(kw in query_lower for kw in ["todo", "task", "add to", "need to", "remember to"])
+    is_list = any(kw in query_lower for kw in ["list reminders", "show reminders", "my reminders", "what reminders"])
+    
+    # List reminders
+    if is_list:
+        from jarvis.utils.task_scheduler import TaskScheduler
+        scheduler = brain.task_scheduler if hasattr(brain, 'task_scheduler') else TaskScheduler()
+        summary = scheduler.list_tasks_human_readable()
+        return summary
+    
+    # Add reminder or todo
+    if is_reminder or is_todo:
+        from jarvis.utils.task_scheduler import TaskScheduler
+        scheduler = brain.task_scheduler if hasattr(brain, 'task_scheduler') else TaskScheduler()
+        
+        # Extract task info
+        task_info = scheduler.extract_task_info(query)
+        
+        if task_info:
+            task_type = task_info['type']
+            content = task_info['content']
+            time_str = task_info['time']
+            
+            # Add task
+            task = scheduler.add_task(
+                task_type=task_type,
+                content=content,
+                scheduled_time=time_str,
+                recurring="once"
+            )
+            
+            if time_str:
+                response = f"Got it. I'll {task_type} you to {content} at {time_str}. Even if you close me, I'll remember this."
+            else:
+                response = f"Added to your {task_type}s: {content}. I'll keep this in memory."
+            
+            return response
+        else:
+            return "I can't quite understand the reminder. Could you say something like 'Remind me to call mom at 5 pm'?"
+    
     return None

@@ -21,10 +21,31 @@ def clean_text(text: str) -> str:
     # Remove extra whitespace
     text = re.sub(r'\s+', ' ', text.strip())
     
+    # Normalize common STT mis-hearings for model/provider names
+    text = _normalize_misheard_keywords(text)
+    
     # Remove special characters if needed (keep basic punctuation)
     # text = re.sub(r'[^\w\s.,!?]', '', text)
     
     return text.lower()
+
+
+def _normalize_misheard_keywords(text: str) -> str:
+    """Fix common speech-to-text mis-hearings (e.g., "broke" -> "groq")."""
+    replacements = {
+        "broke": "grok",
+        "brock": "grok",
+        "grog": "grok",
+        # keep 'grok' as-is
+    }
+    # Only apply when user likely refers to models/providers
+    provider_hints = ["llm", "api", "key", "model", "use", "switch", "provider", "openrouter", "gemini", "groq", "grok"]
+    lowered = text.lower()
+    if any(hint in lowered for hint in provider_hints):
+        for wrong, right in replacements.items():
+            lowered = re.sub(rf"\b{wrong}\b", right, lowered)
+        return lowered
+    return text
 
 
 def extract_keywords(query: str, keywords: List[str]) -> List[str]:

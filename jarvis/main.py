@@ -17,15 +17,38 @@ from jarvis.core.brain import Brain
 from jarvis.core.response import ResponseHandler
 from jarvis.settings import UserSettings
 from jarvis.utils.logger import setup_logger
+from jarvis.utils.personality import PersonalityType
+from jarvis.utils.reminder_service import ReminderService
+from jarvis.config import PERSONALITY_MODE
 
 logger = setup_logger(__name__)
 
 
-def greet(settings: UserSettings, response_handler: ResponseHandler):
+def greet(settings: UserSettings, response_handler: ResponseHandler, reminder_service: ReminderService = None):
     """Greet the user on startup."""
-    greeting = f"Hello {settings.name}, I am JARVIS. How can I assist you today?"
+    import random
+    greetings = [
+        "JARVIS online. How can I help you today?",
+        "Hello. JARVIS here, ready to assist.",
+        "Good day. What can I do for you?",
+        "JARVIS system ready. What can I do for you?",
+        "Hello. I'm here to help. What's on your mind?",
+        "JARVIS operational. How may I be of service?",
+        "Good to see you. What would you like me to do?",
+        "Hello. JARVIS at your service. What can I help with?",
+        "System ready. What task do you have for me?",
+        "JARVIS here. What would you like assistance with?"
+    ]
+    greeting = random.choice(greetings)
     logger.info("Starting JARVIS")
     response_handler.respond(greeting)
+    
+    # Check for pending reminders
+    if reminder_service:
+        reminder_summary = reminder_service.check_startup_reminders()
+        if "No reminders" not in reminder_summary:
+            logger.info(f"Reminder check: {reminder_summary}")
+            response_handler.respond(reminder_summary)
 
 
 def register_skills(brain: Brain):
@@ -33,10 +56,17 @@ def register_skills(brain: Brain):
     # Import skills with error handling (lazy imports to avoid circular dependencies)
     skills_to_register = []
     
-    # Basic skill (required)
+    # Basic skill (required) - now includes reminder handling
     try:
         from jarvis.skills import basic
-        skills_to_register.append(("basic", basic.handle, ["time", "date", "joke", "wikipedia", "who are you", "exit", "bye", "what is", "who is"]))
+        # Create a wrapper for basic.handle that also checks reminders
+        def basic_with_reminders(query):
+            result = basic.handle(query)
+            if not result:
+                result = basic.handle_reminder(query, brain=brain)
+            return result
+        
+        skills_to_register.append(("basic", basic_with_reminders, ["hello", "hi", "hey", "greetings", "time", "date", "joke", "wikipedia", "who are you", "exit", "bye", "what is", "who is", "remind", "reminder", "notification", "notify", "todo", "task", "list reminders"]))
     except ImportError as e:
         logger.error(f"Could not import basic skill: {e}")
         return  # Cannot continue without basic skill
@@ -49,14 +79,22 @@ def register_skills(brain: Brain):
         ("youtube", ["youtube", "play", "play video", "play music", "play song", "watch", "search", "search youtube", "find", "look for", "youtube channel", "trending", "subscriptions"]),
         ("app_control", ["chrome", "google chrome", "vlc", "close tab", "close this tab", "close the tab", "close these tabs", "close all tabs", "close window", "close this window", "close the window", "switch window", "minimize", "maximize", "notepad", "calculator", "paint", "explorer", "task manager"]),
         ("web", ["google search", "search", "browse", "visit", "website", "github", "stackoverflow"]),
-        ("file_manager", ["create file", "delete file", "rename file", "create folder", "delete folder", "list files", "show files"]),
+        ("file_manager", ["create file", "delete file", "rename file", "create folder", "delete folder", "list files", "show files", "create document", "create word", "make document", "create pdf", "make pdf", "create presentation", "create ppt", "make ppt"]),
         ("system_commands", ["execute", "run command", "system command"]),
+        ("automation", ["google search", "write content", "generate content", "youtube search", "play youtube", "open", "launch", "start", "close", "shut", "exit"]),
     ]
     
     for skill_name, keywords in optional_skills:
         try:
             skill_module = __import__(f"jarvis.skills.{skill_name}", fromlist=[skill_name])
-            skills_to_register.append((skill_name, skill_module.handle, keywords))
+            
+            # Special handling for automation skill (needs brain context)
+            if skill_name == "automation":
+                def automation_handler(query):
+                    return skill_module.handle(query, brain=brain)
+                skills_to_register.append((skill_name, automation_handler, keywords))
+            else:
+                skills_to_register.append((skill_name, skill_module.handle, keywords))
         except (ImportError, AttributeError) as e:
             logger.debug(f"Skill '{skill_name}' not available: {e}")
     
@@ -95,14 +133,28 @@ def main():
             wake_word=settings.wake_word,
             use_wake_word=settings.use_wake_word
         )
-        brain = Brain()
+        
+        # Create brain with personality
+        try:
+            personality = PersonalityType(PERSONALITY_MODE)
+        except ValueError:
+            personality = PersonalityType.CASUAL
+            logger.warning(f"Invalid personality mode '{PERSONALITY_MODE}', using CASUAL")
+        
+        brain = Brain(personality=personality)
         response_handler = ResponseHandler(speech_engine)
+        
+        # Initialize reminder service
+        reminder_service = ReminderService(brain.task_scheduler)
+        # Set callback for TTS notifications
+        reminder_service.set_notify_callback(response_handler.respond)
+        reminder_service.start()
         
         # Register skills
         register_skills(brain)
         
-        # Greet user
-        greet(settings, response_handler)
+        # Greet user and check for pending reminders
+        greet(settings, response_handler, reminder_service)
         
         # Main loop
         logger.info("Entering main loop - say 'goodbye' to exit")
@@ -166,6 +218,7 @@ def main():
             except KeyboardInterrupt:
                 logger.info("Interrupted by user (Ctrl+C)")
                 response_handler.respond("Goodbye!")
+                reminder_service.stop()
                 break
             except Exception as e:
                 logger.error(f"Error in main loop: {e}", exc_info=True)
@@ -179,6 +232,12 @@ def main():
         logger.critical(f"Fatal error: {e}", exc_info=True)
         print(f"Fatal error: {e}")
         sys.exit(1)
+    finally:
+        # Ensure reminder service is stopped
+        try:
+            reminder_service.stop()
+        except:
+            pass
 
 
 if __name__ == "__main__":

@@ -1,12 +1,18 @@
 """
 Command parser, LLM integration, and decision making.
 """
+import asyncio
 import threading
 from typing import Dict, Callable, Optional
 from concurrent.futures import ThreadPoolExecutor
 from jarvis.utils.logger import setup_logger
 from jarvis.utils.helpers import extract_keywords, clean_text
 from jarvis.utils.intent_parser import IntentParser, CommandExecutor
+from jarvis.utils.conversation_memory import ConversationMemory
+from jarvis.utils.personality import PersonalityConfig, PersonalityType
+from jarvis.utils.command_classifier import CommandClassifier
+from jarvis.utils.task_scheduler import TaskScheduler
+from jarvis.utils.async_utils import AsyncManager, ParallelExecutor
 from jarvis.config import (
     USE_OPENROUTER, USE_GEMINI, USE_GROQ, 
     OPENROUTER_API_KEY, OPENROUTER_MODEL, 
@@ -18,21 +24,30 @@ logger = setup_logger(__name__)
 
 
 class Brain:
-    """Command dispatcher with AI intent parsing and LLM fallback."""
+    """Command dispatcher with AI intent parsing, personality, and memory."""
     
-    def __init__(self, max_workers: int = 4):
-        """Initialize brain with skill mappings and AI intent parser.
+    def __init__(self, max_workers: int = 4, personality: PersonalityType = PersonalityType.CASUAL):
+        """Initialize brain with skill mappings, AI parsing, and personality.
         
         Args:
             max_workers: Maximum number of worker threads for parallel skill execution
+            personality: Personality type for responses (casual, witty, sarcastic, etc.)
         """
         self.skills: Dict[str, Callable[[str], Optional[str]]] = {}
         self.keyword_map: Dict[str, str] = {}  # keyword -> skill_name
         self.intent_parser = IntentParser()  # AI intent parser
         self.command_executor = CommandExecutor(brain=self)  # Command executor
         self.executor = ThreadPoolExecutor(max_workers=max_workers)  # Thread pool for parallel execution
+        self.async_manager = AsyncManager(max_workers=max_workers)  # Async manager
         self._lock = threading.Lock()  # Lock for thread-safe operations
-        logger.info(f"Brain initialized with AI intent parsing and thread pool ({max_workers} workers)")
+        
+        # New systems
+        self.memory = ConversationMemory()  # Conversation memory
+        self.personality = PersonalityConfig(personality)  # Personality system
+        self.classifier = CommandClassifier()  # Command/chat classifier
+        self.task_scheduler = TaskScheduler()  # Task scheduler for reminders
+        
+        logger.info(f"Brain initialized with AI intent parsing, personality ({personality.value}), memory, task scheduler, and async support")
     
     def register_skill(self, skill_name: str, handler: Callable[[str], Optional[str]], keywords: list):
         """
@@ -504,6 +519,68 @@ JARVIS:"""
                 results[skill_name] = None
         
         return results
+    
+    async def process_async(self, query: str) -> Optional[str]:
+        """
+        Process query asynchronously.
+        
+        Args:
+            query: User query
+            
+        Returns:
+            Response text
+        """
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self.process, query)
+    
+    async def execute_skills_parallel(self, queries: list) -> Dict[str, Optional[str]]:
+        """
+        Execute multiple skills in parallel with async.
+        
+        Args:
+            queries: List of (skill_name, query) tuples
+            
+        Returns:
+            Dict of skill results
+        """
+        tasks = []
+        skill_names = []
+        
+        for skill_name, query in queries:
+            if skill_name in self.skills:
+                handler = self.skills[skill_name]
+                task = self._run_skill_async(handler, query)
+                tasks.append(task)
+                skill_names.append(skill_name)
+        
+        if not tasks:
+            return {}
+        
+        results_list = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        results = {}
+        for skill_name, result in zip(skill_names, results_list):
+            results[skill_name] = result if not isinstance(result, Exception) else None
+        
+        return results
+    
+    async def _run_skill_async(self, handler: Callable, query: str) -> Optional[str]:
+        """Run a skill handler asynchronously.
+        
+        Args:
+            handler: Skill function
+            query: Query string
+            
+        Returns:
+            Skill result
+        """
+        try:
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(None, handler, query)
+            return result
+        except Exception as e:
+            logger.error(f"Async skill error: {e}")
+            return None
     
     def shutdown_executor(self):
         """Gracefully shutdown the thread pool executor."""

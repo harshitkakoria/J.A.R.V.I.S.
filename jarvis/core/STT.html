@@ -13,9 +13,14 @@
   <button id="start" onclick="startRecognition()">Start Recognition</button>
   <button id="end" onclick="stopRecognition()">Stop Recognition</button>
   <p id="output"></p>
+  <p id="status"></p>
   <script>
     const output = document.getElementById('output');
+    const status = document.getElementById('status');
     let recognition;
+    let silenceTimer;
+    let lastSpeechTime = 0;
+    const SILENCE_TIMEOUT = 2000; // 2 seconds of silence to auto-stop
 
     function getLang() {
       const params = new URLSearchParams(window.location.search);
@@ -31,19 +36,62 @@
       recognition = new SR();
       recognition.lang = getLang();
       recognition.continuous = true;
-      recognition.interimResults = false;
+      recognition.interimResults = true; // Enable real-time interim results
+
+      let finalTranscript = '';
 
       recognition.onresult = function (event) {
-        const res = event.results[event.results.length - 1];
-        if (res && res[0]) {
-          output.textContent += res[0].transcript;
+        let interimTranscript = '';
+        
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const transcript = event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            finalTranscript += transcript + ' ';
+          } else {
+            interimTranscript += transcript;
+          }
+        }
+        
+        // Show both final and interim results in real-time
+        output.textContent = finalTranscript + interimTranscript;
+        
+        // Update status and reset silence timer when we get final results
+        if (finalTranscript) {
+          lastSpeechTime = Date.now();
+          status.textContent = 'speaking';
+          
+          clearTimeout(silenceTimer);
+          silenceTimer = setTimeout(() => {
+            status.textContent = 'done';
+            stopRecognition();
+          }, SILENCE_TIMEOUT);
         }
       };
 
+      recognition.onerror = function(event) {
+        if (event.error !== 'no-speech' && event.error !== 'aborted') {
+          status.textContent = 'error: ' + event.error;
+        }
+      };
+
+      recognition.onend = function() {
+        // Auto-restart if we haven't detected silence yet and output is empty
+        if (status.textContent !== 'done' && output.textContent.trim() === '') {
+          try {
+            recognition.start();
+          } catch(e) {
+            // Recognition already started
+          }
+        }
+      };
+
+      lastSpeechTime = Date.now();
+      status.textContent = 'listening';
       recognition.start();
     }
 
     function stopRecognition() {
+      clearTimeout(silenceTimer);
       try { recognition && recognition.stop(); } catch(e) {}
     }
   </script>
