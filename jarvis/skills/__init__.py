@@ -1,4 +1,1 @@
-"""
-Skills module - individual features and commands (modular).
-"""
-
+"""Skills modules."""

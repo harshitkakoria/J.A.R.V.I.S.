@@ -1,110 +1,115 @@
-"""
-Wake-word detection and command recording.
-"""
-import threading
-from typing import Optional, Callable
-from jarvis.core.speech import SpeechEngine
-from jarvis.utils.logger import setup_logger
-from jarvis.utils.helpers import clean_text
-
-logger = setup_logger(__name__)
+"""Listener - Captures voice input via Selenium STT."""
+import time
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from webdriver_manager.chrome import ChromeDriverManager
 
 
 class Listener:
-    """Handles wake word detection and command capture."""
+    """Simple STT via Selenium."""
     
-    def __init__(self, speech_engine: SpeechEngine, wake_word: str = "jarvis", use_wake_word: bool = True):
-        """
-        Initialize listener.
-        
-        Args:
-            speech_engine: SpeechEngine instance
-            wake_word: Wake word to listen for
-            use_wake_word: Whether to use wake word detection
-        """
-        self.speech_engine = speech_engine
-        self.wake_word = wake_word.lower()
-        self.use_wake_word = use_wake_word
-        logger.info(f"Listener initialized with wake word: '{self.wake_word}'")
+    def __init__(self):
+        self.driver = None
+        self.html_path = None
+        self.is_speaking = False
     
-    def wait_for_wake_word(self, timeout: int = 30, threaded: bool = False, callback: Optional[Callable[[bool], None]] = None) -> Optional[threading.Thread]:
-        """
-        Wait for wake word to be detected.
-        Can run in background thread with callback.
-        
-        Args:
-            timeout: Seconds to wait before giving up (0 = infinite)
-            threaded: If True, run in background thread
-            callback: Function to call with result (True/False) when done
+    def start(self, html_path: str):
+        """Start Chrome with STT HTML."""
+        try:
+            print("🔧 Starting Chrome...")
             
-        Returns:
-            Thread object if threaded=True, None otherwise
-        """
-        if threaded:
-            thread = threading.Thread(
-                target=self._wait_for_wake_word_impl,
-                args=(timeout, callback),
-                daemon=True
+            options = Options()
+            options.add_argument("--use-fake-ui-for-media-stream")
+            options.add_argument("--disable-blink-features=AutomationControlled")
+            options.add_experimental_option("excludeSwitches", ["enable-logging", "enable-automation"])
+            options.add_experimental_option("useAutomationExtension", False)
+            
+            # Install and use ChromeDriver
+            service = Service(ChromeDriverManager().install())
+            
+            print("🌐 Loading speech recognition page...")
+            self.driver = webdriver.Chrome(service=service, options=options)
+            self.driver.get(f"file:///{html_path.replace('\\', '/')}")
+            
+            print("⏳ Waiting for page to load...")
+            time.sleep(2)
+            
+            # Start recognition
+            start_btn = WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((By.ID, "start"))
             )
-            thread.start()
-            logger.debug(f"Started wake word detection in background thread")
-            return thread
-        else:
-            return self._wait_for_wake_word_impl(timeout, callback)
+            start_btn.click()
+            
+            print("✅ Speech recognition ready!\n")
+            
+        except Exception as e:
+            print(f"❌ Error starting listener: {e}")
+            print("💡 Try: pip install selenium webdriver-manager")
+            raise
     
-    def _wait_for_wake_word_impl(self, timeout: int = 30, callback: Optional[Callable[[bool], None]] = None) -> Optional[bool]:
-        """Internal implementation of wake word detection."""
-        if not self.use_wake_word:
-            if callback:
-                callback(True)
-            return True
+    def listen(self) -> str:
+        """Listen for voice input with quick retries."""
+        if not self.driver:
+            return ""
+        if self.is_speaking:
+            return ""
         
-        logger.debug(f"Waiting for wake word '{self.wake_word}'...")
-        attempts = 0
-        max_attempts = timeout if timeout > 0 else 999999  # Large number for "infinite"
-        
-        while attempts < max_attempts:
-            text = self.speech_engine.listen(timeout=3, phrase_time_limit=5)
-            if text and self.wake_word in clean_text(text):
-                logger.info(f"✓ Wake word '{self.wake_word}' detected!")
-                if callback:
-                    callback(True)
-                return True
-            
-            attempts += 1
-            if timeout > 0 and attempts % 5 == 0:
-                logger.debug(f"Still waiting for wake word... ({attempts}s)")
-        
-        logger.warning(f"Timeout waiting for wake word after {timeout} seconds")
-        if callback:
-            callback(False)
-        return False
+        try:
+            # Quick retries (total ~2s) to avoid long blocking waits
+            for _ in range(4):
+                try:
+                    output = self.driver.find_element(By.ID, "output")
+                    if output and output.text.strip():
+                        text = output.text.strip()
+                        # Clear output for next capture
+                        self.driver.execute_script("document.getElementById('output').innerHTML = ''")
+                        return text
+                except Exception:
+                    pass
+                time.sleep(0.5)
+            return ""
+        except Exception as e:
+            print(f"⚠️ Listen error: {e}")
+            return ""
+
+    def start_speaking(self):
+        """Mark speaking to ignore self audio."""
+        self.is_speaking = True
+        # Clear any pending text
+        try:
+            if self.driver:
+                self.driver.execute_script("document.getElementById('output').innerHTML = ''")
+        except Exception:
+            pass
+
+    def stop_speaking(self):
+        """Resume listening after speaking."""
+        self.is_speaking = False
     
-    def capture_command(self, timeout: int = 2) -> Optional[str]:
-        """
-        Capture user command after wake word.
-        
-        Args:
-            timeout: Seconds to wait for command
-            
-        Returns:
-            Captured command text or None
-        """
-        import time
-        logger.info("🎙️ Listening for command... (speak now)")
-        
-        # Reduced phrase_time_limit from 8 to 3 seconds - ends listening sooner after speech ends
-        # This makes it more responsive to when you finish speaking
-        command = self.speech_engine.listen(timeout=timeout, phrase_time_limit=3)
-        
-        if command:
-            # Remove wake word from command if present
-            command = clean_text(command)
-            if self.wake_word in command:
-                command = command.replace(self.wake_word, "").strip()
-            
-            if command:  # Make sure there's still text after removing wake word
-                logger.info(f"✓ Command captured: '{command}'")
-                return command
-        
-        return None
+    def stop(self):
+        """Stop listener."""
+        if self.driver:
+            try:
+                self.driver.quit()
+            except:
+                pass
+    
+    def pause(self):
+        """Pause listening (clear the input)."""
+        if self.driver:
+            try:
+                self.driver.execute_script("document.getElementById('output').innerHTML = ''")
+            except:
+                pass
+    
+    def resume(self):
+        """Resume listening."""
+        if self.driver:
+            try:
+                self.driver.execute_script("document.getElementById('output').innerHTML = ''")
+            except:
+                pass

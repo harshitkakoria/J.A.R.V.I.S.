@@ -1,131 +1,53 @@
-#!/usr/bin/env python3
-"""
-JARVIS in TEXT MODE (no microphone needed)
-Type commands instead of speaking
-"""
-import sys
-from pathlib import Path
-
-project_root = Path(__file__).parent
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
-
-from jarvis.core.speech import SpeechEngine
+"""Text mode for JARVIS (no voice)."""
 from jarvis.core.brain import Brain
-from jarvis.core.response import ResponseHandler
-from jarvis.settings import UserSettings
-from jarvis.skills import basic
-from jarvis.utils.logger import setup_logger
+from jarvis.skills import basic, web, youtube, apps, system, weather, files, scrape
 
-logger = setup_logger(__name__)
 
 def main():
-    """Main entry point - TEXT MODE."""
-    try:
-        # Load settings
-        settings = UserSettings.load()
-        
-        # Initialize components
-        speech_engine = SpeechEngine(
-            rate=settings.voice_rate,
-            volume=settings.voice_volume,
-            voice_id=settings.voice_id
-        )
-        brain = Brain()
-        response_handler = ResponseHandler(speech_engine)
-        
-        # Register skills
-        from jarvis.skills import basic, weather, system, scrape, web, youtube, file_manager, app_control, system_commands
-        
-        brain.register_skill(
-            "basic",
-            basic.handle,
-            keywords=["time", "date", "joke", "wikipedia", "who are you", "exit", "bye", "what is", "who is"]
-        )
-        
-        brain.register_skill(
-            "weather",
-            weather.handle,
-            keywords=["weather", "temperature", "forecast", "rain", "hot", "cold", "climate"]
-        )
-        
-        brain.register_skill(
-            "system",
-            system.handle,
-            keywords=["screenshot", "shutdown", "restart", "reboot", "volume", "mute", "quiet", "loud"]
-        )
-        
-        brain.register_skill(
-            "scrape",
-            scrape.handle,
-            keywords=["news", "headline", "gold", "stock", "market", "price"]
-        )
-        
-        brain.register_skill(
-            "youtube",
-            youtube.handle,
-            keywords=["youtube", "play", "play video", "play music", "play song", "watch", "search", "search youtube", "find", "look for", "youtube channel", "trending", "subscriptions"]
-        )
-        
-        brain.register_skill(
-            "web",
-            web.handle,
-            keywords=["google search", "search", "browse", "visit", "website", "github", "stackoverflow"]
-        )
-        
-        brain.register_skill(
-            "file_manager",
-            file_manager.handle,
-            keywords=["create file", "delete file", "rename file", "create folder", "delete folder", "list files"]
-        )
-        
-        brain.register_skill(
-            "app_control",
-            app_control.handle,
-            keywords=["chrome", "google chrome", "vlc", "close tab", "close this tab", "close the tab", "close these tabs", "close all tabs", "close window", "close this window", "close the window", "switch window", "minimize", "maximize", "notepad", "calculator", "paint", "explorer", "task manager"]
-        )
-        
-        brain.register_skill(
-            "system_commands",
-            system_commands.handle,
-            keywords=["execute", "run command", "system command"]
-        )
-        
-        # Greeting
-        greeting = f"Hello {settings.name}, I am JARVIS (TEXT MODE). Type 'exit' to quit."
-        print(f"\nJARVIS: {greeting}\n")
-        response_handler.respond(greeting)
-        
-        # Main loop
-        while True:
-            # Get text input
-            user_input = input("You: ").strip()
-            
-            if not user_input:
+    """Run JARVIS text mode."""
+    print("=" * 60)
+    print("J.A.R.V.I.S v2.0 - Text Mode")
+    print("=" * 60)
+    
+    # Initialize
+    brain = Brain()
+    
+    # Register all skills
+    brain.register("basic", basic.handle, ["time", "date", "joke", "who are you", "exit", "quit"])
+    brain.register("web", web.handle, ["search", "google", "open"])
+    brain.register("youtube", youtube.handle, ["play", "youtube", "watch"])
+    brain.register("apps", apps.handle, ["open", "close", "launch", "start"])
+    brain.register("system", system.handle, ["screenshot", "volume", "mute"])
+    brain.register("weather", weather.handle, ["weather", "temperature", "forecast"])
+    brain.register("files", files.handle, ["create", "delete", "list files"])
+    brain.register("scrape", scrape.handle, ["news", "headline", "gold", "stock"])
+    
+    print("\n✓ JARVIS ready! Type your commands.")
+    print("Type 'exit' to quit\n")
+    print("💡 Memory enabled:")
+    print("   - Say 'my name is [name]' to introduce yourself")
+    print("   - Ask 'what did I say' to recall")
+    print("   - Type 'remember' to see conversation history\n")
+    
+    while True:
+        try:
+            query = input("You: ").strip()
+            if not query:
                 continue
             
-            # Process command
-            response = brain.process(user_input)
+            # Brain handles memory automatically
+            response = brain.process(query)
+            print(f"JARVIS: {response}\n")
             
-            # Handle exit
-            if response and any(kw in response.lower() for kw in ["goodbye", "bye"]):
-                print(f"\nJARVIS: {response}\n")
-                response_handler.respond(response)
+            if any(w in query.lower() for w in ["exit", "quit", "bye"]):
+                # Farewell with name
+                name = brain.memory.get_context("user_name")
+                if name:
+                    print(f"JARVIS: Goodbye {name}!\n")
                 break
-            
-            # Respond
-            if response:
-                print(f"\nJARVIS: {response}\n")
-                response_handler.respond(response)
-            else:
-                fallback = "I didn't catch that. Could you rephrase?"
-                print(f"\nJARVIS: {fallback}\n")
-                response_handler.respond(fallback)
-                
-    except Exception as e:
-        logger.critical(f"Fatal error: {e}", exc_info=True)
-        print(f"Fatal error: {e}")
-        sys.exit(1)
+        except KeyboardInterrupt:
+            print("\n\nGoodbye!")
+            break
 
 
 if __name__ == "__main__":

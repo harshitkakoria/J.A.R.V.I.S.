@@ -1,7 +1,2 @@
-"""
-JARVIS - Just A Rather Very Intelligent System
-Main package for the JARVIS voice assistant.
-"""
-
-__version__ = "0.1.0"
-
+"""J.A.R.V.I.S - Simple, fast voice assistant."""
+__version__ = "2.0.0"

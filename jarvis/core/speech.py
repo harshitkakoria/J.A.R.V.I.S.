@@ -1,106 +1,85 @@
-"""
-Speech-to-Text (STT) and Text-to-Speech (TTS) functionality.
-STT: Selenium + Chrome Web Speech API
-TTS: Edge TTS
-"""
-import threading
-import platform
-from typing import Optional, Callable
-from jarvis.utils.logger import setup_logger
-from dotenv import dotenv_values
+"""Speech - Text to Speech."""
+import pygame
+import random
+import asyncio
+import edge_tts
+import os
+from pathlib import Path
+from dotenv import load_dotenv
 
-logger = setup_logger(__name__)
+# Load environment variables
+load_dotenv()
 
 
-class SpeechEngine:
-    """Handles both STT and TTS operations."""
+class Speaker:
+    """Smart TTS using edge-tts and pygame."""
     
-    def __init__(self, rate: int = 150, volume: float = 0.9, voice_id: int = 0, use_selenium_stt: bool = True):
-        """
-        Initialize speech engine.
+    def __init__(self):
+        self.voice = os.getenv("ASSISTANT_VOICE", "en-CA-LiamNeural")
+        self.cache_dir = Path("data/tts_cache")
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
         
-        Args:
-            rate: Speech rate (words per minute) - unused, for compatibility
-            volume: Volume level (0.0 to 1.0) - unused, for compatibility
-            voice_id: Voice index - unused, for compatibility
-            use_selenium_stt: Always True (only STT method)
-        """
-        self.selenium_stt = None
+        # Initialize pygame mixer
+        pygame.mixer.init()
         
-        # Initialize Edge TTS
-        try:
-            from jarvis.core.TextToSpeech import TextToSpeech
-            self.tts_engine = TextToSpeech()
-            logger.info("Edge TTS initialized")
-        except Exception as e:
-            logger.error(f"Failed to initialize Edge TTS: {e}")
-            self.tts_engine = None
-        
-        # Initialize Selenium STT
-        try:
-            from jarvis.core.SeleniumSTT import SeleniumSTT
-            env_config = dotenv_values()
-            stt_language = env_config.get("STT_INPUT_LANGUAGE", "en")
-            self.selenium_stt = SeleniumSTT(headless=True, language=stt_language, timeout=10)
-            logger.info(f"Selenium STT initialized (Web Speech API, headless) - Language: {stt_language}")
-        except Exception as e:
-            logger.error(f"Failed to initialize Selenium STT: {e}")
-            self.selenium_stt = None
+        self.responses = [
+            "The rest of the result has been printed to the chat screen, kindly check it out sir.",
+            "The rest of the text is now on the chat screen, sir, please check it.",
+            "You can see the rest of the text on the chat screen, sir.",
+            "The remaining part of the text is now on the chat screen, sir.",
+            "Sir, you'll find more text on the chat screen for you to see.",
+            "The rest of the answer is now on the chat screen, sir.",
+            "Sir, please look at the chat screen, the rest of the answer is there.",
+            "You'll find the complete answer on the chat screen, sir.",
+            "The next part of the text is on the chat screen, sir.",
+            "Sir, please check the chat screen for more information.",
+            "There's more text on the chat screen for you, sir.",
+            "Sir, take a look at the chat screen for additional text.",
+            "You'll find more to read on the chat screen, sir.",
+            "Sir, check the chat screen for the rest of the text.",
+            "The chat screen has the rest of the text, sir.",
+            "There's more to see on the chat screen, sir, please look.",
+            "Sir, the chat screen holds the continuation of the text.",
+            "You'll find the complete answer on the chat screen, kindly check it out sir.",
+            "Please review the chat screen for the rest of the text, sir.",
+            "Sir, look at the chat screen for the complete answer."
+        ]
     
-    def speak(self, text: str, threaded: bool = False) -> Optional[threading.Thread]:
-        """
-        Convert text to speech using Edge TTS with male voice.
+    def speak(self, text: str):
+        """Speak text using edge-tts with smart truncation."""
+        if not text:
+            return
         
-        Args:
-            text: Text to speak
-            threaded: If True, speak in background thread (non-blocking)
+        try:
+            # Check if text is too long
+            lines = text.split('\n')
+            words = text.split()
             
-        Returns:
-            Thread object if threaded=True, None otherwise
-        """
-        if not self.tts_engine:
-            print(f"JARVIS: {text}")
-            return None
-        
-        try:
-            return self.tts_engine.speak(text, threaded=threaded)
-        except Exception as e:
-            logger.error(f"Error in TTS: {e}")
-            print(f"JARVIS: {text}")
-            return None
-    
-    def listen(self, timeout: int = 5, phrase_time_limit: int = 5) -> Optional[str]:
-        """
-        Listen for speech and convert to text using Selenium Web Speech API.
-        
-        Args:
-            timeout: Seconds to wait for speech
-            phrase_time_limit: Maximum seconds for phrase
+            if len(lines) > 2 or len(words) > 250:
+                # Speak first 2 lines
+                speak_text = '\n'.join(lines[:2])
+                # Add random response
+                speak_text += " " + random.choice(self.responses)
+            else:
+                speak_text = text
             
-        Returns:
-            Recognized text or None
-        """
-        # Audible cue: start listening (Windows only)
-        try:
-            if platform.system() == "Windows":
-                import winsound
-                winsound.Beep(800, 150)  # frequency, duration(ms)
-        except Exception:
-            pass
-
-        # Use Selenium STT
-        if not self.selenium_stt:
-            logger.error("Selenium STT not initialized")
-            return None
+            asyncio.run(self._speak_async(speak_text))
+        except Exception as e:
+            print(f"[TTS Error: {e}]")
+    
+    async def _speak_async(self, text: str):
+        """Async TTS generation and playback."""
+        import time
+        output = self.cache_dir / f"temp_{int(time.time() * 1000)}.mp3"
         
-        result = self.selenium_stt.listen(timeout=timeout, phrase_time_limit=phrase_time_limit)
+        # Generate audio
+        communicate = edge_tts.Communicate(text, self.voice)
+        await communicate.save(str(output))
         
-        # Audible cue: stop listening (Windows only)
-        try:
-            if platform.system() == "Windows":
-                import winsound
-                winsound.Beep(600, 120)
-        except Exception:
-            pass
+        # Play audio using pygame
+        pygame.mixer.music.load(str(output))
+        pygame.mixer.music.play()
         
-        return result
+        # Wait for playback to finish
+        while pygame.mixer.music.get_busy():
+            await asyncio.sleep(0.1)

@@ -1,4 +1,146 @@
-# J.A.R.V.I.S
+# J.A.R.V.I.S v2.0
+**Simple, Fast Voice Assistant - Talks & Remembers**
+
+## What Changed in v2.0?
+- **91% code reduction** (152KB → 14KB)
+- **All features working** - nothing removed
+- **✨ Talks back** - TTS with edge-tts (natural voice)
+- **✨ Remembers conversations** - tracks last 10 exchanges
+- **✨ Knows your name** - personalized responses
+- **No complex interactions** - each skill is independent
+- **No duplicate functions** - clean, single implementation
+- **Simple error handling** - fails fast, no nested try-catch
+- **Fast startup** - instant response
+
+## Features
+✅ **Basic**: time, date, jokes, exit
+✅ **Web**: Google search, open websites
+✅ **YouTube**: play videos (auto-play), search
+✅ **Apps**: open/close apps, Chrome PWAs, Start Menu apps, web fallback
+✅ **System**: screenshot, volume control
+✅ **Weather**: current weather (free API)
+✅ **Files**: create Word/PDF/PowerPoint, delete, list
+✅ **Scrape**: news headlines, gold prices, stocks
+✅ **Memory**: remembers conversations, your name, context
+
+## Quick Start
+```bash
+# Text mode (recommended for testing)
+python run_text_mode.py
+
+# Voice mode (speaks back)
+python -m jarvis.main
+```
+
+## Commands
+```
+Conversation & Memory:
+- "my name is [name]"
+- "hello" (will use your name)
+- "what did I say"
+- "remember" (shows conversation history)
+- "thanks" / "thank you"
+
+Basic:
+- "what time is it"
+- "tell me a joke"
+- "who are you"
+
+Web:
+- "search for python tutorials"
+- "open github"
+
+YouTube:
+- "play relaxing music"
+- "search youtube for tutorials"
+
+Apps (now with PWA support):
+- "open chatgpt"
+- "open chrome"
+- "open notepad"
+- "close chrome"
+
+System:
+- "take a screenshot"
+- "volume up"
+- "mute"
+
+Weather:
+- "what's the weather"
+- "temperature"
+
+Files:
+- "create word document"
+- "create pdf"
+- "create presentation"
+- "list files"
+- "delete file confirm"
+
+Scrape:
+- "latest news"
+- "gold price"
+- "stock market"
+
+Exit:
+- "exit" (will say goodbye with your name)
+- "quit"
+- "bye"
+```
+
+## Memory System
+JARVIS now remembers:
+- ✅ Your name (introduce yourself: "my name is...")
+- ✅ Last 10 conversations
+- ✅ What you asked recently
+- ✅ Context for personalized responses
+
+Example:
+```
+You: my name is Harshit
+JARVIS: Nice to meet you, Harshit! How can I help you today?
+
+You: hello
+JARVIS: Hello Harshit! How can I help?
+
+You: what did I say
+JARVIS: You asked: 'hello'
+```
+
+## Architecture
+```
+jarvis/
+├── core/
+│   ├── brain.py       # 80 lines - routing + memory
+│   ├── listener.py    # 60 lines - Selenium STT
+│   └── speech.py      # 30 lines - edge-tts
+├── skills/
+│   ├── basic.py       # time, date, jokes
+│   ├── web.py         # search, websites
+│   ├── youtube.py     # play, search (pywhatkit)
+│   ├── apps.py        # open/close (Start Menu + PWA + web fallback)
+│   ├── system.py      # screenshot, volume
+│   ├── weather.py     # current weather
+│   ├── files.py       # create docs, delete, list
+│   └── scrape.py      # news, gold, stocks
+└── utils/
+    ├── helpers.py     # text cleaning
+    └── memory.py      # conversation tracking
+```
+
+## How It Works
+1. **Listens** via Selenium STT (real-time)
+2. **Brain** routes to skills + checks memory
+3. **Skills** execute independently
+4. **Memory** saves exchange automatically
+5. **Speaks** response with edge-tts
+
+## Dependencies
+```bash
+pip install selenium webdriver-manager edge-tts pywhatkit pyjokes psutil pyautogui python-dotenv requests beautifulsoup4 python-docx python-pptx reportlab pycaw
+```
+
+## Backup
+Your old complex version is in `jarvis_backup/` folder
 **Just A Rather Very Intelligent System**
 
 I am trynna to be Iron man.

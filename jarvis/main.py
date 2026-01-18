@@ -1,243 +1,156 @@
-"""
-Main entry point for JARVIS.
-Starts the listening loop and handles the greeting.
-"""
-import sys
+"""Main entry point for JARVIS."""
 from pathlib import Path
-
-# Add project root to Python path
-project_root = Path(__file__).parent.parent
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
-
-# Core imports
-from jarvis.core.speech import SpeechEngine
-from jarvis.core.listener import Listener
 from jarvis.core.brain import Brain
-from jarvis.core.response import ResponseHandler
-from jarvis.settings import UserSettings
-from jarvis.utils.logger import setup_logger
-from jarvis.utils.personality import PersonalityType
-from jarvis.utils.reminder_service import ReminderService
-from jarvis.config import PERSONALITY_MODE
-
-logger = setup_logger(__name__)
-
-
-def greet(settings: UserSettings, response_handler: ResponseHandler, reminder_service: ReminderService = None):
-    """Greet the user on startup."""
-    import random
-    greetings = [
-        "JARVIS online. How can I help you today?",
-        "Hello. JARVIS here, ready to assist.",
-        "Good day. What can I do for you?",
-        "JARVIS system ready. What can I do for you?",
-        "Hello. I'm here to help. What's on your mind?",
-        "JARVIS operational. How may I be of service?",
-        "Good to see you. What would you like me to do?",
-        "Hello. JARVIS at your service. What can I help with?",
-        "System ready. What task do you have for me?",
-        "JARVIS here. What would you like assistance with?"
-    ]
-    greeting = random.choice(greetings)
-    logger.info("Starting JARVIS")
-    response_handler.respond(greeting)
-    
-    # Check for pending reminders
-    if reminder_service:
-        reminder_summary = reminder_service.check_startup_reminders()
-        if "No reminders" not in reminder_summary:
-            logger.info(f"Reminder check: {reminder_summary}")
-            response_handler.respond(reminder_summary)
-
-
-def register_skills(brain: Brain):
-    """Register all available skills with the brain."""
-    # Import skills with error handling (lazy imports to avoid circular dependencies)
-    skills_to_register = []
-    
-    # Basic skill (required) - now includes reminder handling
-    try:
-        from jarvis.skills import basic
-        # Create a wrapper for basic.handle that also checks reminders
-        def basic_with_reminders(query):
-            result = basic.handle(query)
-            if not result:
-                result = basic.handle_reminder(query, brain=brain)
-            return result
-        
-        skills_to_register.append(("basic", basic_with_reminders, ["hello", "hi", "hey", "greetings", "time", "date", "joke", "wikipedia", "who are you", "exit", "bye", "what is", "who is", "remind", "reminder", "notification", "notify", "todo", "task", "list reminders"]))
-    except ImportError as e:
-        logger.error(f"Could not import basic skill: {e}")
-        return  # Cannot continue without basic skill
-    
-    # Optional skills
-    optional_skills = [
-        ("weather", ["weather", "temperature", "forecast", "rain", "hot", "cold", "climate"]),
-        ("system", ["screenshot", "shutdown", "restart", "reboot", "volume", "mute", "quiet", "loud"]),
-        ("scrape", ["news", "headline", "gold", "stock", "market", "price"]),
-        ("youtube", ["youtube", "play", "play video", "play music", "play song", "watch", "search", "search youtube", "find", "look for", "youtube channel", "trending", "subscriptions"]),
-        ("app_control", ["chrome", "google chrome", "vlc", "close tab", "close this tab", "close the tab", "close these tabs", "close all tabs", "close window", "close this window", "close the window", "switch window", "minimize", "maximize", "notepad", "calculator", "paint", "explorer", "task manager"]),
-        ("web", ["google search", "search", "browse", "visit", "website", "github", "stackoverflow"]),
-        ("file_manager", ["create file", "delete file", "rename file", "create folder", "delete folder", "list files", "show files", "create document", "create word", "make document", "create pdf", "make pdf", "create presentation", "create ppt", "make ppt"]),
-        ("system_commands", ["execute", "run command", "system command"]),
-        ("automation", ["google search", "write content", "generate content", "youtube search", "play youtube", "open", "launch", "start", "close", "shut", "exit"]),
-    ]
-    
-    for skill_name, keywords in optional_skills:
-        try:
-            skill_module = __import__(f"jarvis.skills.{skill_name}", fromlist=[skill_name])
-            
-            # Special handling for automation skill (needs brain context)
-            if skill_name == "automation":
-                def automation_handler(query):
-                    return skill_module.handle(query, brain=brain)
-                skills_to_register.append((skill_name, automation_handler, keywords))
-            else:
-                skills_to_register.append((skill_name, skill_module.handle, keywords))
-        except (ImportError, AttributeError) as e:
-            logger.debug(f"Skill '{skill_name}' not available: {e}")
-    
-    # Real-time search engine skill
-    try:
-        from jarvis.utils.realtime_search_engine import RealtimeSearchEngine
-        search_engine = RealtimeSearchEngine()
-        skills_to_register.append(("realtime_search", search_engine.search, ["latest", "current", "recent", "today", "breaking", "real time", "right now", "search for", "find out"]))
-        logger.info("Real-time search engine registered")
-    except Exception as e:
-        logger.debug(f"Real-time search engine not available: {e}")
-    
-    # Register all available skills
-    for skill_name, handler, keywords in skills_to_register:
-        brain.register_skill(skill_name, handler, keywords)
-    
-    logger.info(f"Registered {len(skills_to_register)} skill(s)")
+from jarvis.core.listener import Listener
+from jarvis.core.speech import Speaker
+from jarvis.utils.helpers import clean_text
+from jarvis.skills import basic, web, youtube, apps, system, weather, files, scrape
 
 
 def main():
-    """Main entry point."""
+    """Run JARVIS voice mode."""
+    print("=" * 60)
+    print("J.A.R.V.I.S v2.0 - Simple & Fast")
+    print("=" * 60)
+    
     try:
-        # Load settings
-        settings = UserSettings.load()
+        # Initialize
+        brain = Brain()
+        listener = Listener()
+        speaker = Speaker()
         
-        # Initialize speech engine
-        speech_engine = SpeechEngine(
-            rate=settings.voice_rate,
-            volume=settings.voice_volume,
-            voice_id=settings.voice_id
-        )
+        # Register all skills
+        brain.register("basic", basic.handle, ["time", "date", "joke", "who are you", "exit", "quit", "bye"])
+        brain.register("web", web.handle, ["search", "google", "open facebook", "open github", "open twitter"])
+        brain.register("youtube", youtube.handle, ["play", "youtube", "watch"])
+        brain.register("apps", apps.handle, ["open", "close", "launch", "start", "notepad", "calculator", "chrome", "chatgpt", "gemini"])
+        brain.register("system", system.handle, ["screenshot", "volume", "mute", "capture"])
+        brain.register("weather", weather.handle, ["weather", "temperature", "forecast", "rain", "hot", "cold"])
+        brain.register("files", files.handle, ["create file", "create document", "create word", "create pdf", "create presentation", "delete file", "list files"])
+        brain.register("scrape", scrape.handle, ["news", "headline", "gold", "stock", "market"])
         
-        # Initialize components
-        listener = Listener(
-            speech_engine=speech_engine,
-            wake_word=settings.wake_word,
-            use_wake_word=settings.use_wake_word
-        )
+        # Start listener
+        html_path = Path("data/selenium_stt/speech_recognition.html").absolute()
+        if not html_path.exists():
+            print(f"❌ Error: HTML file not found at {html_path}")
+            print("Please ensure data/selenium_stt/speech_recognition.html exists")
+            return
         
-        # Create brain with personality
-        try:
-            personality = PersonalityType(PERSONALITY_MODE)
-        except ValueError:
-            personality = PersonalityType.CASUAL
-            logger.warning(f"Invalid personality mode '{PERSONALITY_MODE}', using CASUAL")
+        listener.start(str(html_path))
         
-        brain = Brain(personality=personality)
-        response_handler = ResponseHandler(speech_engine)
+        print("\n✓ JARVIS is ready! Speak now...")
+        print("Say 'exit' to quit\n")
+        print("💡 Tips:")
+        print("   - Say 'my name is [name]' to introduce yourself")
+        print("   - Ask 'what did I say' to recall conversation")
+        print("   - I'll remember our last 10 exchanges\n")
         
-        # Initialize reminder service
-        reminder_service = ReminderService(brain.task_scheduler)
-        # Set callback for TTS notifications
-        reminder_service.set_notify_callback(response_handler.respond)
-        reminder_service.start()
+        # Startup greeting
+        greeting = "Hello! I'm JARVIS, your personal assistant. How can I help you today?"
+        print(f"🤖 JARVIS: {greeting}")
+        speaker.speak(greeting)
         
-        # Register skills
-        register_skills(brain)
-        
-        # Greet user and check for pending reminders
-        greet(settings, response_handler, reminder_service)
-        
-        # Main loop
-        logger.info("Entering main loop - say 'goodbye' to exit")
-        attempt_count = 0
-        max_consecutive_failures = 3
+    except Exception as e:
+        print(f"\n❌ Startup failed: {e}")
+        print("\n💡 Troubleshooting:")
+        print("   1. Run: pip install selenium webdriver-manager")
+        print("   2. Make sure Chrome browser is installed")
+        print("   3. Check data/selenium_stt/speech_recognition.html exists")
+        return
+    
+    try:
+        waiting_for_input = True
+        command_count = 0
+        max_commands_before_restart = 10
         
         while True:
             try:
-                # Wait for wake word (if enabled) with timeout
-                if settings.use_wake_word:
-                    logger.info("Listening for wake word 'jarvis'...")
-                    if not listener.wait_for_wake_word(timeout=60):
-                        logger.info("No wake word detected, restarting...")
-                        continue
-                    # Acknowledge wake word
-                    response_handler.acknowledge()
-                else:
-                    logger.info("Ready for command...")
+                # Restart listener every N commands to maintain connection quality
+                if command_count >= max_commands_before_restart:
+                    print("\n🔄 Refreshing speech recognition...")
+                    try:
+                        listener.stop()
+                        listener = Listener()
+                        listener.start(str(html_path))
+                        command_count = 0
+                        waiting_for_input = True
+                    except Exception as e:
+                        print(f"[Refresh error: {e}]")
                 
-                # Small delay to let microphone settle after previous interaction
-                import time
-                time.sleep(0.5)
+                if waiting_for_input:
+                    print("\n🎙️  Ready...")
+                    waiting_for_input = False
                 
-                # Capture command
-                logger.debug("Listening for command...")
-                command = listener.capture_command(timeout=5)
-                
-                if not command:
-                    logger.debug("No command captured, try again")
-                    attempt_count += 1
-                    if attempt_count >= max_consecutive_failures:
-                        response_handler.respond("I didn't catch that. Please try again.")
-                        attempt_count = 0
+                # Listen
+                raw_text = listener.listen()
+                if not raw_text:
                     continue
                 
-                # Reset failure counter on successful capture
-                attempt_count = 0
+                waiting_for_input = True
+                command_count += 1
                 
-                logger.info(f"Command received: {command}")
-                # Process command
-                response = brain.process(command)
+                # Clean
+                query = clean_text(raw_text)
+                print(f"\n🎤 You: {query}")
                 
-                # Handle exit
-                if response and any(kw in response.lower() for kw in ["goodbye", "bye", "see you"]):
-                    response_handler.respond(response)
-                    logger.info("Shutting down JARVIS")
+                # Pause listener before speaking
+                try:
+                    listener.start_speaking()
+                except:
+                    pass
+                
+                # Process (brain handles memory automatically)
+                response = brain.process(query)
+                print(f"🤖 JARVIS: {response}")
+                
+                # Speak (always talk back) with timeout
+                try:
+                    speaker.speak(response)
+                except:
+                    print("[TTS skipped]")
+                
+                # Resume listener after speaking
+                try:
+                    listener.stop_speaking()
+                except:
+                    pass
+                
+                # Exit?
+                if any(w in query.lower() for w in ["exit", "quit", "bye"]):
+                    # Pause listener before final farewell
+                    try:
+                        listener.start_speaking()
+                    except:
+                        pass
+                    # Farewell with name if known
+                    name = brain.memory.get_context("user_name")
+                    farewell = f"Goodbye {name}!" if name else "Goodbye!"
+                    print(f"🤖 JARVIS: {farewell}")
+                    try:
+                        speaker.speak(farewell)
+                    except:
+                        pass
+                    try:
+                        listener.stop_speaking()
+                    except:
+                        pass
                     break
-                
-                # Respond with TTS
-                if response:
-                    logger.info(f"JARVIS: {response}")
-                    response_handler.respond(response)
-                    # Wait for TTS to complete before listening again
-                    import time
-                    time.sleep(0.5)  # Let TTS finish and microphone settle
-                else:
-                    response_handler.respond("I didn't understand that. Could you rephrase?")
-                    import time
-                    time.sleep(0.5)
-                    
+            
             except KeyboardInterrupt:
-                logger.info("Interrupted by user (Ctrl+C)")
-                response_handler.respond("Goodbye!")
-                reminder_service.stop()
                 break
             except Exception as e:
-                logger.error(f"Error in main loop: {e}", exc_info=True)
-                response_handler.respond("Sorry, I encountered an error. Please try again.")
-                attempt_count += 1
-                if attempt_count >= max_consecutive_failures:
-                    logger.error("Too many errors, restarting...")
-                    attempt_count = 0
+                print(f"[Error in loop: {e}]")
+                continue
     
-    except Exception as e:
-        logger.critical(f"Fatal error: {e}", exc_info=True)
-        print(f"Fatal error: {e}")
-        sys.exit(1)
-    finally:
-        # Ensure reminder service is stopped
+    except KeyboardInterrupt:
+        print("\n\n🤖 JARVIS: Shutting down. Goodbye!")
         try:
-            reminder_service.stop()
+            speaker.speak("Shutting down. Goodbye!")
         except:
             pass
+    finally:
+        listener.stop()
+        print("✓ JARVIS stopped")
 
 
 if __name__ == "__main__":
