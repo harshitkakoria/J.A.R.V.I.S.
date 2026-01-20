@@ -61,22 +61,8 @@ def main():
     try:
         waiting_for_input = True
         command_count = 0
-        max_commands_before_restart = 10
-        
         while True:
             try:
-                # Restart listener every N commands to maintain connection quality
-                if command_count >= max_commands_before_restart:
-                    print("\n🔄 Refreshing speech recognition...")
-                    try:
-                        listener.stop()
-                        listener = Listener()
-                        listener.start(str(html_path))
-                        command_count = 0
-                        waiting_for_input = True
-                    except Exception as e:
-                        print(f"[Refresh error: {e}]")
-                
                 if waiting_for_input:
                     print("\n🎙️  Ready...")
                     waiting_for_input = False

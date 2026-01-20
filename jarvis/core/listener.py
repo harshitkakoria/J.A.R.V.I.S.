@@ -60,7 +60,8 @@ class Listener:
         
         try:
             # Quick retries (total ~2s) to avoid long blocking waits
-            for _ in range(4):
+            # Sleep 0.1s * 20 = 2 seconds
+            for _ in range(20):
                 try:
                     output = self.driver.find_element(By.ID, "output")
                     if output and output.text.strip():
@@ -70,7 +71,7 @@ class Listener:
                         return text
                 except Exception:
                     pass
-                time.sleep(0.5)
+                time.sleep(0.1)  # Checking 10x per second instead of 2x
             return ""
         except Exception as e:
             print(f"⚠️ Listen error: {e}")

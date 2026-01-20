@@ -21,6 +21,7 @@ pywhatkit>=5.4
 pyautogui>=0.9.54
 pycaw>=20230407
 psutil>=5.9.0
+AppOpener>=1.6
 
 # Audio Processing
 numpy>=1.24.0
