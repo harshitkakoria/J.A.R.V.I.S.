@@ -1,5 +1,6 @@
 """Web scraping - news, stocks."""
 import requests
+import yfinance as yf
 from bs4 import BeautifulSoup
 
 
@@ -11,10 +12,24 @@ def handle(query: str) -> str:
         return get_news()
     
     if "gold" in q:
-        return get_gold()
+        return get_stock("GC=F", "Gold")
     
-    if "stock" in q or "market" in q:
-        return get_stock()
+    if "stock" in q or "price" in q:
+        # Try to extract a ticker like "AAPL" or "TSLA"
+        words = q.split()
+        for word in words:
+            if word.isupper() and len(word) <= 5 and word.isalpha():
+                return get_stock(word)
+                
+        # Common usage mapping
+        if "apple" in q: return get_stock("AAPL", "Apple")
+        if "google" in q: return get_stock("GOOGL", "Google")
+        if "microsoft" in q: return get_stock("MSFT", "Microsoft")
+        if "tesla" in q: return get_stock("TSLA", "Tesla")
+        if "amazon" in q: return get_stock("AMZN", "Amazon")
+        if "bitcoin" in q: return get_stock("BTC-USD", "Bitcoin")
+        
+        return "Please say the stock ticker (e.g., 'AAPL stock') or common name."
     
     return None
 
@@ -41,22 +56,19 @@ def get_news() -> str:
     return "Couldn't fetch news"
 
 
-def get_gold() -> str:
-    """Get gold price."""
+def get_stock(symbol: str, name: str = None) -> str:
+    """Get real-time stock price."""
     try:
-        # Using alternative gold price API
-        url = "https://api.metals.live/v1/spot/gold"
-        resp = requests.get(url, timeout=5)
-        data = resp.json()
+        ticker = yf.Ticker(symbol)
+        # fast_info is efficient
+        price = ticker.fast_info.last_price
         
-        price_usd = data[0]["price"]
-        price_inr = price_usd * 83  # Approx USD to INR
+        if not name:
+            name = symbol.upper()
+            
+        if price:
+            return f"{name} ({symbol.upper()}): ${price:.2f}"
+    except Exception as e:
+        return f"Couldn't check stock for {symbol}"
         
-        return f"Gold: ${price_usd:.2f}/oz (₹{price_inr:.0f}/10g approx)"
-    except:
-        return "Couldn't fetch gold price"
-
-
-def get_stock() -> str:
-    """Get stock info."""
-    return "Stock tracking requires API key. Visit alphavantage.co for free key"
+    return f"Could not find price for {symbol}"

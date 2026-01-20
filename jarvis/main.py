@@ -15,7 +15,7 @@ def main():
     
     try:
         # Initialize
-        brain = Brain()
+        brain = Brain(use_ai_decision=True)
         listener = Listener()
         speaker = Speaker()
         

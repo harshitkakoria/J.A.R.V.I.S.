@@ -105,3 +105,9 @@ htmlcov/
 test_*.py
 *_test.py
 
+# Agent
+.agent/
+.gemini/
+jarvis_backup/
+
+

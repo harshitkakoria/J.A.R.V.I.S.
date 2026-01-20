@@ -1,16 +1,14 @@
 # J.A.R.V.I.S v2.0
 **Simple, Fast Voice Assistant - Talks & Remembers**
 
-## What Changed in v2.0?
-- **91% code reduction** (152KB → 14KB)
-- **All features working** - nothing removed
+## What Changed in v2.1?
+- **🚀 Powered by Groq**: Ultra-fast AI decision making using Llama 3.
+- **⚡ Real-time Data**: improved accuracy for news, stocks, and weather.
+- **🛠️ Bug Fixes**: Fixed `WinError 193` when opening apps, silent background app launching.
+- **🧹 Cleaner Console**: Application logs are now suppressed.
 - **✨ Talks back** - TTS with edge-tts (natural voice)
 - **✨ Remembers conversations** - tracks last 10 exchanges
 - **✨ Knows your name** - personalized responses
-- **No complex interactions** - each skill is independent
-- **No duplicate functions** - clean, single implementation
-- **Simple error handling** - fails fast, no nested try-catch
-- **Fast startup** - instant response
 
 ## Features
 ✅ **Basic**: time, date, jokes, exit
@@ -20,7 +18,7 @@
 ✅ **System**: screenshot, volume control
 ✅ **Weather**: current weather (free API)
 ✅ **Files**: create Word/PDF/PowerPoint, delete, list
-✅ **Scrape**: news headlines, gold prices, stocks
+✅ **Real-time AI**: news headlines, gold prices, stocks, weather (via Groq/Llama 3)
 ✅ **Memory**: remembers conversations, your name, context
 
 ## Quick Start
@@ -213,13 +211,12 @@ Jarvis/
    ```
 
 4. **Set up environment variables**:
-   - The `.env` file is already created with Gemini API configuration
-   - Your Gemini API key is already configured
-   - You can change `GEMINI_MODEL` in `.env` to use different models:
-     - `gemini-1.5-flash` (fast, recommended)
-     - `gemini-1.5-pro` (more capable)
-     - `gemini-pro` (older version)
-   - Optional: Add API keys for Groq/OpenAI if you want to use them instead
+4. **Set up environment variables**:
+   - The `.env` file should contain:
+     ```env
+     GROQ_API_KEY=your_groq_api_key_here
+     ```
+   - (Optional) `OPENAI_API_KEY` if you use OpenAI handlers.
 
 ## Running JARVIS
 

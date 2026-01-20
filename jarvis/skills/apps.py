@@ -54,6 +54,25 @@ def open_app(query: str) -> str:
     for kw in ["open", "launch", "start"]:
         q = q.replace(kw, "").strip()
     
+    # Function to open without logs
+    def run_detached(path):
+        try:
+            # CREATE_NO_WINDOW = 0x08000000
+            # DETACHED_PROCESS = 0x00000008
+            subprocess.Popen(
+                [path], 
+                stdout=subprocess.DEVNULL, 
+                stderr=subprocess.DEVNULL,
+                stdin=subprocess.DEVNULL,
+                close_fds=True,
+                shell=True  # Needed for shortcuts (.lnk) unfortunately, or use 'start' command
+            )
+            # Actually, simpler way for shortcuts that supports detachment:
+            # usage of 'start "" "path"' via shell
+            return True
+        except:
+            return False
+
     # Check installed apps
     for name, path in APPS.items():
         if name in q:
@@ -61,16 +80,21 @@ def open_app(query: str) -> str:
                 for p in path:
                     p = p.format(os.getenv("USERNAME", ""))
                     if os.path.exists(p):
-                        # Non-blocking, no shell
-                        subprocess.Popen([p], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                        return f"Opening {name}"
+                        try:
+                            # Use 'start' command to detach completely
+                            subprocess.Popen(f'start "" "{p}"', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                            return f"Opening {name}"
+                        except Exception as e:
+                            print(f"Error opening {name}: {e}")
             elif path.startswith("ms-"):
-                subprocess.Popen(["start", path], shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.Popen(f'start {path}', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 return f"Opening {name}"
             elif os.path.exists(path):
-                # Non-blocking, no shell
-                subprocess.Popen([path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                return f"Opening {name}"
+                try:
+                    subprocess.Popen(f'start "" "{path}"', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    return f"Opening {name}"
+                except Exception as e:
+                    print(f"Error opening {name}: {e}")
     
     # Check Start Menu (Chrome apps)
     username = os.getenv("USERNAME")
@@ -83,8 +107,12 @@ def open_app(query: str) -> str:
         for shortcut in glob.glob(search_path, recursive=True):
             name = os.path.splitext(os.path.basename(shortcut))[0].lower()
             if q in name or name in q:
-                subprocess.Popen([shortcut], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                return f"Opening {name}"
+                try:
+                    # 'start' command handles .lnk files and detaches them
+                    subprocess.Popen(f'start "" "{shortcut}"', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    return f"Opening {name}"
+                except Exception:
+                    pass
     
     # Check websites
     for name, url in WEBSITES.items():
@@ -107,32 +135,49 @@ def close_app(query: str) -> str:
     """Close running app."""
     q = query.lower()
     
-    procs = {
-        "chrome": "chrome.exe",
-        "notepad": "notepad.exe",
-        "calculator": "calc.exe",
-        "settings": "SystemSettings.exe",
-        "vscode": "Code.exe",
+    # Remove close keywords
+    for kw in ["close", "shut", "exit", "kill"]:
+        q = q.replace(kw, "").strip()
+
+    # Dynamic process closing
+    killed_count = 0
+    target = None
+    
+    # Common mappings
+    mappings = {
+        "calculator": "calc",
+        "settings": "systemsettings",
+        "paint": "mspaint",
+        "vscode": "code.exe"
     }
     
-    for name, proc_name in procs.items():
-        if name in q:
-            if name == "chrome":
-                return "Chrome is running speech recognition, so I won't close it."
-            killed = False
-            for proc in psutil.process_iter(['name', 'cmdline']):
-                try:
-                    if proc.info['name'].lower() == proc_name.lower():
-                        # Skip the speech recognition Chrome tab
-                        cmdline = " ".join(proc.info.get('cmdline') or []).lower()
-                        if "speech_recognition.html" in cmdline:
-                            continue
-                        proc.kill()
-                        killed = True
-                except Exception:
-                    pass
-            if not killed and proc_name.lower() == "chrome.exe":
-                return "Chrome STT tab is protected and left running."
-            return f"Closed {name}" if killed else f"{name} not running"
+    # Use mapping or original query
+    search_term = mappings.get(q, q)
     
-    return "App not found"
+    for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+        try:
+            p_name = proc.info['name'].lower()
+            
+            # Skip system processes and self
+            if p_name in ["python.exe", "cmd.exe", "powershell.exe", "svchost.exe", "explorer.exe"]:
+                continue
+
+            # Skip Chrome STT
+            if "chrome" in p_name:
+                cmdline = " ".join(proc.info.get('cmdline') or []).lower()
+                if "speech_recognition.html" in cmdline:
+                    continue
+
+            # Match
+            if search_term in p_name:
+                proc.kill()
+                killed_count += 1
+                target = p_name
+                
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            pass
+            
+    if killed_count > 0:
+        return f"Closed {target} ({killed_count} processes)"
+    
+    return f"Could not find running app: {q}"

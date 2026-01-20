@@ -10,7 +10,7 @@ def main():
     print("=" * 60)
     
     # Initialize
-    brain = Brain()
+    brain = Brain(use_ai_decision=True)
     
     # Register all skills
     brain.register("basic", basic.handle, ["time", "date", "joke", "who are you", "exit", "quit"])
