@@ -1,5 +1,6 @@
 import webbrowser
 import difflib
+import psutil
 from urllib.parse import quote
 from AppOpener import open as app_open, close as app_close, give_appnames
 
@@ -91,17 +92,65 @@ def open_app(query: str) -> str:
 
 
 def close_app(query: str) -> str:
-    """Close running app."""
+    """Close running app safely using psutil."""
     q = query.lower()
     
     # Remove close keywords
     for kw in ["close", "shut", "exit", "kill"]:
         q = q.replace(kw, "").strip()
 
-    # Try AppOpener for close
+    # Dynamic process closing using psutil (Safer than AppOpener)
+    killed_count = 0
+    target = None
+    
+    # Common mappings for process names
+    mappings = {
+        "calculator": "calc",
+        "settings": "systemsettings",
+        "paint": "mspaint",
+        "vscode": "code",
+        "github": "github", # Matches GitHubDesktop.exe or similar
+        "spotify": "spotify",
+    }
+    
+    search_term = mappings.get(q, q)
+    print(f"Attempting to close process matching: '{search_term}'")
+    
     try:
-        print(f"AppOpener: Closing '{q}'")
-        app_close(q, match_closest=True, output=False)
-        return f"Closed {q} (if running)"
+        for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+            try:
+                p_name = proc.info['name'].lower()
+                
+                # Critical Safety: Skip system processes
+                if p_name in ["python.exe", "cmd.exe", "powershell.exe", "svchost.exe", "explorer.exe", "csrss.exe", "winlogon.exe"]:
+                    continue
+
+                # Smart matching
+                match = False
+                
+                # Check name
+                if search_term in p_name:
+                    match = True
+                
+                # Check command line (helpful for python scripts or java apps)
+                if not match and proc.info['cmdline']:
+                    cmd = " ".join(proc.info['cmdline']).lower()
+                    if search_term in cmd:
+                        match = True
+                
+                if match:
+                    print(f"Killing process: {p_name} ({proc.info['pid']})")
+                    proc.kill()
+                    killed_count += 1
+                    target = p_name
+                    
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                continue
+                
+        if killed_count > 0:
+            return f"Closed {target} ({killed_count} processes)"
+        
     except Exception as e:
-        return f"Error closing {q}: {e}"
+        print(f"Error in close_app: {e}")
+        
+    return f"Could not find running app: {q}"

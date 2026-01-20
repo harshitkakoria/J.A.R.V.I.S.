@@ -14,7 +14,7 @@
 ✅ **Basic**: time, date, jokes, exit
 ✅ **Web**: Google search, open websites
 ✅ **YouTube**: play videos (auto-play), search
-✅ **Apps**: open/close apps, Chrome PWAs, Start Menu apps, web fallback
+✅ **Apps**: open/close ANY app (fuzzy match, shortcuts, Store apps, PWAs)
 ✅ **System**: screenshot, volume control
 ✅ **Weather**: current weather (free API)
 ✅ **Files**: create Word/PDF/PowerPoint, delete, list
@@ -52,11 +52,10 @@ YouTube:
 - "play relaxing music"
 - "search youtube for tutorials"
 
-Apps (now with PWA support):
-- "open chatgpt"
-- "open chrome"
-- "open notepad"
-- "close chrome"
+Apps (Powered by AppOpener):
+- "open spotify" (launches native app)
+- "open sptfy" (autocorrects typo)
+- "close spotify"
 
 System:
 - "take a screenshot"
