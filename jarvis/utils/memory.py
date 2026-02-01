@@ -11,15 +11,17 @@ class Memory:
     def __init__(self, max_size=10, filename="data/memory.json"):
         self.history = deque(maxlen=max_size)  # Last 10 exchanges
         self.context = {}  # Store context like user name, preferences
+        self.pending_clarification = None # Store ambiguous state
         self.filename = filename
         self.load()
     
-    def add(self, user_query: str, jarvis_response: str):
-        """Save exchange."""
+    def add(self, user_query: str, jarvis_response: str, tag: str = "conversation"):
+        """Save exchange with tag (conversation, action, fact)."""
         self.history.append({
             'time': datetime.now().strftime("%H:%M"),
             'user': user_query,
-            'jarvis': jarvis_response
+            'jarvis': jarvis_response,
+            'tag': tag
         })
         self.save()
     
@@ -42,6 +44,20 @@ class Memory:
     def get_context(self, key: str) -> str:
         """Get stored context."""
         return self.context.get(key)
+        
+    def set_pending_clarification(self, data: dict):
+        """Store details about an ambiguous request."""
+        self.pending_clarification = data
+        self.save()
+        
+    def get_pending_clarification(self):
+        """Retrieve pending clarification if any."""
+        return self.pending_clarification
+        
+    def clear_pending_clarification(self):
+        """Clear pending clarification state."""
+        self.pending_clarification = None
+        self.save()
     
     def get_summary(self) -> str:
         """Get conversation summary."""
@@ -59,7 +75,8 @@ class Memory:
         try:
             data = {
                 "history": list(self.history),
-                "context": self.context
+                "context": self.context,
+                "pending_clarification": self.pending_clarification
             }
             # Ensure directory exists
             path = Path(self.filename)
@@ -70,6 +87,12 @@ class Memory:
         except Exception as e:
             print(f"Error saving memory: {e}")
 
+    def has_recent_entity(self) -> bool:
+        """Check if there's a recent entity to resolve pronouns against."""
+        # v3.6: Placeholder - always False to enforce safety for now.
+        # Future: Check context or recent history for apps/concepts.
+        return False
+
     def load(self):
         """Load memory from file."""
         path = Path(self.filename)
@@ -79,5 +102,6 @@ class Memory:
                     data = json.load(f)
                     self.history = deque(data.get("history", []), maxlen=self.history.maxlen)
                     self.context = data.get("context", {})
+                    self.pending_clarification = data.get("pending_clarification")
             except Exception as e:
                 print(f"Error loading memory: {e}")

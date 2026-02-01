@@ -63,15 +63,27 @@ class Listener:
             # Sleep 0.1s * 20 = 2 seconds
             for _ in range(20):
                 try:
-                    output = self.driver.find_element(By.ID, "output")
-                    if output and output.text.strip():
-                        text = output.text.strip()
-                        # Clear output for next capture
-                        self.driver.execute_script("document.getElementById('output').innerHTML = ''")
+                    # v5.0 Optimization: Atomic Read-And-Clear via JS
+                    # Avoids find_element overhead and 2 round-trips
+                    text = self.driver.execute_script("""
+                        var out = document.getElementById('output');
+                        if (out) {
+                            var txt = out.innerText.trim();
+                            if (txt.length > 0) {
+                                out.innerHTML = '';
+                                return txt;
+                            }
+                        }
+                        return '';
+                    """)
+                    
+                    if text:
                         return text
+                        
                 except Exception:
                     pass
-                time.sleep(0.1)  # Checking 10x per second instead of 2x
+                    
+                time.sleep(0.1)  # Checking 10x per second
             return ""
         except Exception as e:
             print(f"⚠️ Listen error: {e}")

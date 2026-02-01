@@ -1,48 +1,103 @@
 """Brain - Routes commands to skills."""
 from typing import Dict, Callable, List
 from jarvis.utils.memory import Memory
+from jarvis.utils.helpers import clean_text
 from jarvis.core.decision import DecisionMaker
-from jarvis.core.task_handler import RealTimeSearch, ChatBot, Automation
-
+from jarvis.core.executor import Executor
+from jarvis.core.models import ExecutionResult
+from jarvis.core.context import ContextManager
+from jarvis.core.vision import VisionManager
 
 class Brain:
-    """Smart command router with memory and Groq AI."""
+    """Core logic engine combining Memory, Decision, and Execution."""
     
-    def __init__(self, use_ai_decision=False):  # Disabled Cohere by default
-        self.skills: Dict[str, tuple] = {}
+    def __init__(self, use_ai_decision=True):
         self.memory = Memory()
+        self.executor = Executor(self.memory)
+        self.context_manager = ContextManager()
+        self.vision_manager = VisionManager()
         self.use_ai_decision = use_ai_decision
-        
-        # Initialize task handlers
-        self.realtime_search = RealTimeSearch()
-        self.chatbot = ChatBot()
-        self.automation = None  # Will be set after skills registration
+        self.decision_maker = None
         
         if use_ai_decision:
             try:
                 self.decision_maker = DecisionMaker()
-                print("✅ AI Decision Maker initialized")
+                print("[+] AI Decision Maker initialized")
             except Exception as e:
-                print(f"⚠️ AI Decision Maker failed: {e}, using keyword matching")
+                print(f"[!] AI Decision Maker failed: {e}, using keyword matching")
                 self.use_ai_decision = False
                 self.decision_maker = None
     
     def register(self, name: str, handler: Callable, keywords: List[str]):
         """Register a skill handler with keywords."""
-        self.skills[name] = (handler, [kw.lower() for kw in keywords])
-        # Initialize automation after all skills registered
-        if self.automation is None:
-            self.automation = Automation(self.skills)
+        self.executor.register(name, handler, keywords)
     
     def process(self, query: str) -> str:
-        """Process query and return response."""
+        """
+        Process a user query through the pipeline:
+        Normalize -> Context -> Ambiguity Check -> Decide -> Execute
+        """
         if not query:
             return "I didn't catch that."
         
-        q = query.lower().strip()
+        # 0. Normalize Query
+        # Remove "can you", fix typos, map synonyms
+        # Note: We keep original query for some context if needed, but for processing we use cleaned
+        raw_query = query
+        query = clean_text(query)
+        q = query # clean_text already lowercases and strips
         
-        # Handle memory queries
-        if "remember" in q or "recall" in q or "what did" in q:
+        # 0.1 Get System Context (v4.0)
+        # Identify active window/process
+        system_context = self.context_manager.get_context()
+        
+        # 0.2 Check for Vision Triggers (v6.0)
+        # Explicit request to see/read screen
+        vision_triggers = ["look at this", "look at my screen", "what is on my screen", "read this", "describe this", "what am i looking at"]
+        if any(vt in q for vt in vision_triggers):
+             return self.vision_manager.analyze(query)
+        
+        # 0. Handle Pending Clarification
+        pending = self.memory.get_pending_clarification()
+        if pending:
+            return self._resolve_clarification(query, pending)
+
+        # 0.5 Ambiguity Guard (v3.6 Fix + v4.0 Context)
+        # Explicitly block unresolved pronouns before anything else
+        # UNLESS we have a clear context (Active Window)
+        has_context = bool(system_context.get("active_window"))
+        
+        if any(p in q.split() for p in ["it", "this", "that", "them", "those"]):
+            if not self.memory.has_recent_entity() and not has_context:
+                self.memory.set_pending_clarification({
+                    "original_query": query,
+                    "reason": "unresolved_pronoun"
+                })
+                # User asked for: "What do you want me to open?" specifically for "Can you open it?"
+                # But generic "it" might apply to "close it". 
+                # I'll use a generic safe response or strict user request?
+                # User said: "The exact bug... The minimal, correct fix... return 'What do you want me to open?'"
+                # But that's specific to 'open'. 
+                # I will output "What do you want me to do with 'it'?" or similar?
+                # Actually, later user example: "User: Can you open it? Jarvis: What do you want me to open?"
+                # I should probably detect the verb if I want to be that smart, but user said "minimal".
+                # Let's stick to the user's specific block for now, or make it slightly dynamic if easy.
+                # "Do you want me to open it?" -> "What do you want me to open?"
+                # "Do you want me to close it?" -> "What do you want me to close?"
+                # Minimal fix:
+                # return "What do you want me to open?" (If I strictly follow the "open it" example logic)
+                # But wait, "close it" shouldn't say "what do you want me to OPEN".
+                # I will try to be slightly smart or generic.
+                # User suggested code: return "What do you want me to open?" implies they are thinking of the "open" case.
+                # I'll use the user's snippet but maybe make it generic? 
+                # "What do you want me to open" is what they Asked for.
+                # I will check if "open" is in query?
+                if "open" in q:
+                     return "What do you want me to open?"
+                return "I'm not sure what 'it' refers to. Could you clarify?"
+        
+        # Handle memory queries (To be moved to Memory Layer in v3.4)
+        if any(kw in q for kw in ["remember", "recall", "what did", "what i asked", "what i told", "what was"]):
             return self._handle_memory_query(query)
         
         # Extract name if user introduces themselves
@@ -54,105 +109,71 @@ class Brain:
                 self.memory.add(query, response)
                 return response
         
+        response = None
+        
         # Use AI Decision Maker if available
         if self.use_ai_decision and self.decision_maker:
             try:
-                decision = self.decision_maker.categorize(query)
-                category = decision.get("category", "general")
+                # v4.0: Pass system context to AI
+                decision = self.decision_maker.categorize(query, memory=self.memory, context=system_context)
                 
-                # Route based on AI decision and task type
-                response = self._route_by_decision(category, query)
-                if response:
-                    self.memory.add(query, response)
-                    return response
+                category = decision.get("category", "general")
+                args = decision.get("args", query)
+                confidence = decision.get("confidence", 0.0)
+                alternatives = decision.get("alternatives", [])
+                plan = decision.get("plan", [])
+                
+                # Confidence Check
+                # Apply to ALL categories (including general) for safety
+                if confidence < 0.75:
+                    # Low confidence on an action -> Clarify
+                    self.memory.set_pending_clarification({
+                        "original_query": query,
+                        "candidate_decision": decision
+                    })
+                    return "I'm not entirely sure. Could you clarify?"
+                
+                # Execute Plan or Single Decision
+                # Use unified executor entry point for validation/tracing support
+                result = self.executor.execute(decision)
+                
+                # Check for Ambiguous General Block -> Fallback to Keywords
+                if not result.success and result.error == "AMBIGUOUS_GENERAL":
+                    print("[!] Ambiguous General: Falling back to keywords")
+                    response = None # Trigger fallback below
+                else:
+                    response = result
+                
             except Exception as e:
-                print(f"⚠️ AI routing failed: {e}, falling back to keyword matching")
+                print(f"[!] AI routing failed: {e}, falling back to keyword matching")
         
-        # Fallback to keyword matching
-        response = None
-        for name, (handler, keywords) in self.skills.items():
-            if any(kw in q for kw in keywords):
-                try:
-                    response = handler(query)
-                    if not response:
-                        response = "Done."
-                    break
-                except Exception as e:
-                    response = f"Error: {str(e)}"
-                    break
+        # Fallback to keyword matching if AI failed or didn't return a response
+        if not response:
+            response = self.executor.execute_fallback(query)
+            
+        # Contextual Fallback
         if not response:
             response = self._contextual_response(query)
         
+        # Format response for output
+        output_text = response
+        tag = "conversation"
+        
+        if isinstance(response, ExecutionResult):
+            output_text = response.message
+            tag = "action"
+            
         # Save to memory
-        self.memory.add(query, response)
+        self.memory.add(query, output_text, tag=tag)
         
-        return response
-    
-    def _route_by_decision(self, category: str, query: str) -> str:
-        """Route query using task handlers (RealTimeSearch, ChatBot, Automation)."""
-        q = query.lower()
-        
-        # Automation tasks
-        if category in ["open", "close", "play", "system", "google search", "youtube search"]:
-            if self.automation:
-                return self.automation.route_automation(category, query)
-        
-        # Real-time search
-        elif category == "realtime":
-            return self.realtime_search.search(query)
-        
-        # General conversation
-        elif category == "general":
-            memory_context = self.memory.get_summary()
-            return self.chatbot.chat(query, memory=memory_context)
-        
-        # Exit
-        elif category == "exit":
-            return "Goodbye!"
-        
-        return None
-    
-    def _route_by_category(self, category: str, query: str) -> str:
-        """Route query based on AI category decision."""
-        q = query.lower()
-        
-        # Map categories to skills
-        if category in ["open", "close", "play", "system"]:
-            if "apps" in self.skills:
-                handler, _ = self.skills["apps"]
-                try:
-                    return handler(query)
-                except:
-                    pass
-        
-        elif category in ["google search"]:
-            if "web" in self.skills:
-                handler, _ = self.skills["web"]
-                try:
-                    return handler(query)
-                except:
-                    pass
-        
-        elif category in ["youtube search", "play"]:
-            if "youtube" in self.skills:
-                handler, _ = self.skills["youtube"]
-                try:
-                    return handler(query)
-                except:
-                    pass
-        
-        elif category == "exit":
-            return "Goodbye!"
-        
-        # For general, realtime, content - let contextual handler take it
-        return None
+        return output_text
     
     def _handle_memory_query(self, query: str) -> str:
         """Handle queries about past conversation."""
         q = query.lower()
         
         # User asking what they said/asked
-        if "what did i" in q or "what was" in q:
+        if any(kw in q for kw in ["what did i", "what was", "what i asked", "what i told"]):
             recent = self.memory.get_recent(1)
             if recent:
                 return f"You asked: '{recent[0]['user']}'"
@@ -188,6 +209,66 @@ class Brain:
             pass
         return None
     
+    def _resolve_clarification(self, query: str, pending: dict) -> str:
+        """Handle user response to a clarification question."""
+        q = query.lower()
+        candidate = pending.get("candidate_decision", {})
+        category = candidate.get("category")
+        args = candidate.get("args")
+        alternatives = candidate.get("alternatives", [])
+        
+        selected_action = None
+        
+        # 1. Option Selection ("first one", "option 2")
+        if "first" in q or "option 1" in q:
+             # Default candidate is technically option 1, but if alternatives listed, maybe option 1 is the candidate?
+             # Let's assume candidate is option 1, alternatives start at 2.
+             selected_action = (category, args)
+        elif "second" in q or "option 2" in q:
+             if len(alternatives) >= 1:
+                 # Alternatives might be just strings "open spotify" or full objects? 
+                 # Our decisionMaker output alternatives as strings ["search youtube", "play ..."]
+                 # We need to parse them back or just treat them as new queries.
+                 # Treating as new query is safest.
+                 return self.process(alternatives[0])
+        elif "third" in q or "option 3" in q:
+             if len(alternatives) >= 2:
+                 return self.process(alternatives[1])
+
+        # 2. Confirmation
+        if not selected_action and any(kw in q for kw in ["yes", "yeah", "yep", "sure", "ok", "do it"]):
+             selected_action = (category, args)
+             
+        if selected_action:
+            self.memory.clear_pending_clarification()
+            
+            # Execute
+            if pending.get("candidate_decision", {}).get("plan"):
+                 # if valid plan was the candidate
+                 response = self.executor.execute_plan(pending["candidate_decision"]["plan"])
+            else:
+                cat, arg_val = selected_action
+                response = self.executor.execute_decision(cat, arg_val, pending.get("original_query", ""))
+            
+            # Format and Save
+            output_text = response
+            tag = "conversation"
+            if isinstance(response, ExecutionResult):
+                output_text = response.message
+                tag = "action"
+            self.memory.add(query, output_text, tag=tag)
+            return output_text
+
+        # 2. Correction (User provided a specific app/value)
+        # If user says "No, Spotify" or just "Spotify"
+        # Ideally we'd re-process this logic smarter, but for now:
+        # If it's a correction, we treat it as a new command contextually linked?
+        # Simplest v3 approach: Treat as new command, clear pending. 
+        # The new command will likely hit the rule match or AI again.
+        
+        self.memory.clear_pending_clarification()
+        return self.process(query)
+
     def _contextual_response(self, query: str) -> str:
         """Generate contextual response using memory."""
         q = query.lower()

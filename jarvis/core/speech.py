@@ -46,7 +46,7 @@ class Speaker:
         ]
     
     def speak(self, text: str):
-        """Speak text using edge-tts with smart truncation."""
+        """Speak text using edge-tts with smart truncation and caching."""
         if not text:
             return
         
@@ -68,18 +68,51 @@ class Speaker:
             print(f"[TTS Error: {e}]")
     
     async def _speak_async(self, text: str):
-        """Async TTS generation and playback."""
+        """Async TTS generation and playback with MD5 caching."""
         import time
-        output = self.cache_dir / f"temp_{int(time.time() * 1000)}.mp3"
+        import hashlib
         
-        # Generate audio
-        communicate = edge_tts.Communicate(text, self.voice)
-        await communicate.save(str(output))
+        # Deterministic Cache Filename
+        # Use first 32 chars of hash to keep filenames reasonable
+        text_hash = hashlib.md5(text.encode("utf-8")).hexdigest()
+        output_file = self.cache_dir / f"{text_hash}.mp3"
         
+        # Check Cache
+        if not output_file.exists():
+            # Generate audio only if not in cache
+            try:
+                communicate = edge_tts.Communicate(text, self.voice)
+                await communicate.save(str(output_file))
+            except Exception as e:
+                print(f"[TTS Generation Error]: {e}")
+                return
+
         # Play audio using pygame
-        pygame.mixer.music.load(str(output))
-        pygame.mixer.music.play()
-        
-        # Wait for playback to finish
-        while pygame.mixer.music.get_busy():
-            await asyncio.sleep(0.1)
+        try:
+            pygame.mixer.music.load(str(output_file))
+            pygame.mixer.music.play()
+            
+            # Wait for playback to finish (Required for half-duplex)
+            while pygame.mixer.music.get_busy():
+                await asyncio.sleep(0.1)
+                
+            # Cleanup old cache occasionally (1 in 20 chance)
+            if random.random() < 0.05:
+                self._cleanup_cache()
+                
+        except Exception as e:
+            print(f"[Playback Error]: {e}")
+
+    def _cleanup_cache(self):
+        """Remove old cache files to prevent bloat."""
+        try:
+            # Keep max 100 recent files
+            files = sorted(self.cache_dir.glob("*.mp3"), key=os.path.getmtime, reverse=True)
+            if len(files) > 100:
+                for f in files[100:]:
+                    try:
+                        os.remove(f)
+                    except:
+                        pass
+        except:
+            pass

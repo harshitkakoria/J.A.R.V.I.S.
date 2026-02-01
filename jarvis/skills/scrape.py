@@ -3,7 +3,6 @@ import requests
 import yfinance as yf
 from bs4 import BeautifulSoup
 
-
 def handle(query: str) -> str:
     """Handle scraping."""
     q = query.lower()

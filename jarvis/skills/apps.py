@@ -3,6 +3,7 @@ import difflib
 import psutil
 from urllib.parse import quote
 from AppOpener import open as app_open, close as app_close, give_appnames
+from jarvis.core.models import ExecutionResult
 
 # App websites (fallback)
 # Used only if AppOpener fails or for specific website requests
@@ -19,9 +20,12 @@ WEBSITES = {
     "github": "https://github.com/",
     "gmail": "https://mail.google.com/",
     "maps": "https://maps.google.com/",
+    "lms": "https://lms.vit.ac.in/login/index.php",
+    "vitop":"https://vtopcc.vit.ac.in/vtop/open/page",
+    "vitcolab": "https://vitcolab945.examly.io/"
 }
 
-def handle(query: str) -> str:
+def handle(query: str) -> ExecutionResult:
     """Handle app commands."""
     q = query.lower()
     
@@ -39,13 +43,13 @@ def handle(query: str) -> str:
 # Cache for app names to avoid re-fetching (slows down voice mode)
 APP_NAMES_CACHE = None
 
-def open_app(query: str) -> str:
+def open_app(query: str) -> ExecutionResult:
     """Open app or website."""
     global APP_NAMES_CACHE
     q = query.lower()
     
     # Remove open keywords
-    for kw in ["open", "launch", "start"]:
+    for kw in ["open", "launch", "start", "the"]:
         q = q.replace(kw, "").strip()
     
     # 1. Try AppOpener (Handles UWP, Shortcuts, Fuzzy Matching)
@@ -56,7 +60,7 @@ def open_app(query: str) -> str:
             APP_NAMES_CACHE = list(give_appnames())
         
         # Find closest match manually to get the cleaner name
-        matches = difflib.get_close_matches(q, APP_NAMES_CACHE, n=1, cutoff=0.6)
+        matches = difflib.get_close_matches(q, APP_NAMES_CACHE, n=1, cutoff=0.8)
         
         target_name = q # Default to query
         if matches:
@@ -65,7 +69,7 @@ def open_app(query: str) -> str:
             
             print(f"AppOpener: Attempting to open '{target_name}'")
             app_open(target_name, match_closest=True, output=False)
-            return f"Opening {target_name}"
+            return ExecutionResult(True, f"Opening {target_name}", data={"app": target_name})
         
         # If no match found in installed apps, do NOT try to open blindly.
         # Fall through to websites/search.
@@ -78,20 +82,23 @@ def open_app(query: str) -> str:
     for name, url in WEBSITES.items():
         if name in q:
             webbrowser.open(url)
-            return f"Opening {name} website"
+            return ExecutionResult(True, f"Opening {name} website", data={"url": url})
     
-    # 3. Try generic website
-    if " " not in q:  # Single word
-        url = f"https://{q}.com"
+    # 3. Try generic website (Stricter: Must look like a domain)
+    if "." in q and " " not in q:  # e.g. "example.com" but not "windows terminal"
+        if not q.startswith("http"):
+             url = f"https://{q}"
+        else:
+             url = q
         webbrowser.open(url)
-        return f"Opening {url}"
+        return ExecutionResult(True, f"Opening {url}", data={"url": url})
     
     # 4. Search Google
     webbrowser.open(f"https://google.com/search?q={quote(q + ' download')}")
-    return f"Searching for {q}"
+    return ExecutionResult(True, f"Searching for {q}", data={"query": q})
 
 
-def close_app(query: str) -> str:
+def close_app(query: str) -> ExecutionResult:
     """Close running app safely using psutil."""
     q = query.lower()
     
@@ -148,9 +155,10 @@ def close_app(query: str) -> str:
                 continue
                 
         if killed_count > 0:
-            return f"Closed {target} ({killed_count} processes)"
+            return ExecutionResult(True, f"Closed {target} ({killed_count} processes)", data={"count": killed_count})
         
     except Exception as e:
         print(f"Error in close_app: {e}")
+        return ExecutionResult(False, f"Error closing app: {e}", error=str(e))
         
-    return f"Could not find running app: {q}"
+    return ExecutionResult(False, f"Could not find running app: {q}")

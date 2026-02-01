@@ -2,7 +2,6 @@
 from datetime import datetime
 import pyjokes
 
-
 def handle(query: str) -> str:
     """Handle basic commands."""
     q = query.lower()

@@ -1,7 +1,6 @@
 """Weather information with dynamic city lookup."""
 import requests
 
-
 def handle(query: str) -> str:
     """Get weather info for any city."""
     if not any(kw in query.lower() for kw in ["weather", "temperature", "forecast", "rain", "hot", "cold"]):
