@@ -59,10 +59,28 @@ def open_app(query: str) -> ExecutionResult:
             # give_appnames() returns dict_keys, convert to list for efficient reuse
             APP_NAMES_CACHE = list(give_appnames())
         
-        # Find closest match manually to get the cleaner name
-        matches = difflib.get_close_matches(q, APP_NAMES_CACHE, n=1, cutoff=0.8)
+        # 1.1 Aliases (Manual Overrides for common issues)
+        aliases = {
+            "chrome": "google chrome",
+            "code": "visual studio code",
+            "vscode": "visual studio code",
+            "edge": "microsoft edge",
+            "brave": "brave browser",
+            "word": "word",
+            "excel": "excel",
+            "powerpoint": "powerpoint",
+            "ppt": "powerpoint",
+            "store": "microsoft store",
+            "notepad": "notepad",
+            "calc": "calculator",
+            "explorer": "file explorer",
+            "terminal": "windows terminal"
+        }
+        target_name = aliases.get(q, q)
         
-        target_name = q # Default to query
+        # Find closest match manually to get the cleaner name
+        matches = difflib.get_close_matches(target_name, APP_NAMES_CACHE, n=1, cutoff=0.6)
+        
         if matches:
             target_name = matches[0]
             # print(f"Matched '{q}' to '{target_name}'") # Debug only

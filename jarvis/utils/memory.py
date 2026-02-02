@@ -14,6 +14,18 @@ class Memory:
         self.pending_clarification = None # Store ambiguous state
         self.filename = filename
         self.load()
+        
+        # Initialize Vector Memory (Long-term)
+        try:
+             from jarvis.utils.vector_memory import VectorMemory
+             self.vector_memory = VectorMemory()
+             print("[+] Long-term Memory initialized")
+        except ImportError:
+             print("[!] Vector Memory dependencies missing. Running in Short-term mode.")
+             self.vector_memory = None
+        except Exception as e:
+             print(f"[!] Vector Memory failed to load: {e}")
+             self.vector_memory = None
     
     def add(self, user_query: str, jarvis_response: str, tag: str = "conversation"):
         """Save exchange with tag (conversation, action, fact)."""
@@ -23,6 +35,10 @@ class Memory:
             'jarvis': jarvis_response,
             'tag': tag
         })
+        if self.vector_memory and tag == "conversation":
+             # Try to store in long-term memory (internally checks filters)
+             self.vector_memory.add(user_query, metadata={"response": jarvis_response})
+             
         self.save()
     
     def get_recent(self, count=3) -> list:
@@ -30,10 +46,22 @@ class Memory:
         return list(self.history)[-count:]
     
     def recall(self, keyword: str) -> str:
-        """Find if keyword was mentioned recently."""
+        """Find if keyword was mentioned recently (Short-term)."""
         for exchange in reversed(self.history):
             if keyword.lower() in exchange['user'].lower():
                 return exchange['jarvis']
+        return None
+
+    def recall_semantic(self, query: str) -> str:
+        """Recall from long-term memory using vector search."""
+        if not self.vector_memory:
+            return None
+            
+        result = self.vector_memory.search(query)
+        if result:
+            text, distance = result
+            # Return just the text for now, Brain handles formatting
+            return text
         return None
     
     def set_context(self, key: str, value: str):

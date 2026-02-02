@@ -57,6 +57,13 @@ class Brain:
         if any(vt in q for vt in vision_triggers):
              return self.vision_manager.analyze(query)
         
+        # 0.3 Handle File Selection (v7.1)
+        # If we have file candidates in context and user says "first one", etc.
+        if self.memory.get_context("file_candidates"):
+             selection_result = self._handle_file_selection(query)
+             if selection_result:
+                 return selection_result
+        
         # 0. Handle Pending Clarification
         pending = self.memory.get_pending_clarification()
         if pending:
@@ -181,7 +188,23 @@ class Brain:
         
         # Summary
         if "remember" in q:
+            if "what" in q or "do you" in q: # "Do you remember..." or "What do you remember..."
+                 # Trigger semantic search
+                 # Extract the core topic? Or just search the whole query?
+                 # Search whole query is simplest.
+                 semantic_fact = self.memory.recall_semantic(query)
+                 if semantic_fact:
+                     return f"I seem to recall you mentioning: '{semantic_fact}'. Is that correct?"
+                 return self.memory.get_summary()
+            
+            # Simple "remember" command might be summary request still?
             return self.memory.get_summary()
+
+        # General recall query (e.g. "What is my favorite color?")
+        # If it didn't match specific "what did I say", try semantic
+        semantic_fact = self.memory.recall_semantic(query)
+        if semantic_fact:
+            return f"I seem to recall you mentioning: '{semantic_fact}'. Is that correct?"
         
         return "What would you like me to recall?"
     
@@ -286,3 +309,57 @@ class Brain:
         
         # Default
         return "I don't understand. Try: 'what time is it', 'play music', 'open chatgpt', etc."
+
+    def _handle_file_selection(self, query: str) -> str:
+        """Handle file selection confirmation (e.g. "first one", "option 2")."""
+        q = query.lower()
+        import re
+        
+        # Extract number
+        selection = None
+        
+        if "first" in q or "option 1" in q or q == "1":
+            selection = 1
+        elif "second" in q or "option 2" in q or q == "2":
+            selection = 2
+        elif "third" in q or "option 3" in q or q == "3":
+            selection = 3
+        elif "fourth" in q or "option 4" in q or q == "4":
+            selection = 4
+        elif "fifth" in q or "option 5" in q or q == "5":
+            selection = 5
+            
+        # Also simple numbers "open 1"
+        match = re.search(r"(\d+)", q)
+        if match and not selection:
+             # Be careful not to match random numbers if query is "open mp3"
+             # Only if query is short or explicit?
+             # For now trust the context lock.
+             try:
+                 val = int(match.group(1))
+                 if 1 <= val <= 5:
+                     selection = val
+             except: pass
+
+        if "yes" in q or "open it" in q:
+             # If only 1 candidate, selection defaults to 1 (handled by FileManager logic usually?)
+             # But FileManager.open_confirmed takes an index.
+             # If we have candidates, and user says "yes", imply 1 ONLY if count == 1
+             candidates = self.memory.get_context("file_candidates")
+             if candidates and len(candidates) == 1:
+                 selection = 1
+        
+        if selection:
+             # Access FileManager via Executor
+             if hasattr(self.executor, "file_manager"):
+                 result = self.executor.file_manager.open_confirmed(selection)
+                 # Clear context on success
+                 if result.success:
+                     self.memory.set_context("file_candidates", None)
+                     
+                 # Retrieve message
+                 output_text = result.message
+                 self.memory.add(query, output_text, tag="action")
+                 return output_text
+                 
+        return None

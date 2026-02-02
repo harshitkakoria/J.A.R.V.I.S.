@@ -23,6 +23,10 @@ class Executor:
         if self.automation is None:
             self.automation = Automation(self.skills)
             
+        # Initialize File Manager (v7.1)
+        from jarvis.skills.file_manager import FileManager
+        self.file_manager = FileManager(self.memory)
+            
     def execute(self, decision: Dict) -> ExecutionResult:
         """
         Unified entry point.
@@ -144,11 +148,32 @@ class Executor:
         # Real-time search
         elif category == "realtime":
             return self.realtime_search.search(query)
+            
+        # File Search (v7.1)
+        elif category == "file_search":
+            # args is the constraints dict
+            intent = {"category": category, "args": action} # action here is the 'args' dict from decision
+            return self.file_manager.handle(intent)
         
         # General conversation
         elif category == "general":
             # 2. Safety: General must NEVER trigger side effects (action-like keywords)
             if self._looks_like_action(query):
+                # Critical Fix: "search X" often gets misclassified as general/conversation.
+                # Instead of erroring with AMBIGUOUS_GENERAL, we intelligently route to google search.
+                if query.lower().startswith("search ") or query.lower().startswith("find "):
+                     # Assuming "find" -> files logic handled elsewhere or here? 
+                     # For safety, let's map "search" -> google search (scrape/realtime)
+                     # and "find" -> files
+                     if query.lower().startswith("find "):
+                         # Strip 'find '
+                         clean_q = query[5:]
+                         return self.automation.route_automation("files", clean_q)
+                     else:
+                         # Strip 'search '
+                         clean_q = query[7:]
+                         return self.automation.route_automation("google search", clean_q)
+
                 return ExecutionResult(
                     False, 
                     "What exactly do you want me to do?", 

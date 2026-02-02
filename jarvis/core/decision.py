@@ -26,7 +26,7 @@ class DecisionMaker:
         self.functions = [
             "exit", "general", "realtime", "open", "close", 
             "play", "system", "content", "google search", 
-            "youtube search", "reminder"
+            "youtube search", "reminder", "file_search"
         ]
         
         # Optimized system prompt for Llama 3 on Groq (JSON Mode)
@@ -40,15 +40,21 @@ Available Functions:
 4. close (app_name) -> To close an application.
 5. play (song_name) -> To play music or video.
 6. system (action) -> For volume control, mute/unmute, screenshot.
-7. google search (topic) -> For explicit web searches.
+7. google search (topic) -> For explicit web searches OR generic "search for" queries (e.g. "search dsa").
 8. youtube search (topic) -> For explicit YouTube searches.
-9. files (action) -> To create, delete, or find/search for files.
+9. file_search (constraints) -> To find files. Args: {"type": "pdf", "time_range": "yesterday", "action": "downloaded"}
 10. exit -> When user says goodbye.
 
 Rules:
 - Output ONLY a valid JSON object.
+- **CRITICAL BIAS**: Prioritize using specific functions (realtime, file_search, system) over 'general'.
+- Use 'general' ONLY for greetings, philosophy, or personal questions.
+- Queries like "what time is it", "weather", "search X", "open Y" MUST use specific functions.
 - Format (Single Step): {"category": "function_name", "args": "content", "confidence": 0.0-1.0, "alternatives": ["alt 1", "alt 2"]}
 - Format (Multi-Step): {"plan": [{"category": "cat1", "args": "args1"}, {"category": "cat2", "args": "args2"}], "confidence": 0.0-1.0}
+- Use "plan" correctly by splitting commands with "and", "then".
+- Example: "Open chrome and search cars" -> Plan: [{"category": "open", "args": "chrome"}, {"category": "google search", "args": "cars"}]
+- Example: "Find that PDF I downloaded yesterday" -> {"category": "file_search", "args": {"type": "pdf", "time_range": "yesterday", "action": "downloaded"}}
 - Use "plan" ONLY if the user asks for multiple distinct actions.
 - "confidence" should be a float between 0.0 and 1.0 indicating your certainty.
 - If unsure or ambiguous, set confidence < 0.75 and provide 2-3 logical alternatives.
@@ -187,4 +193,11 @@ Rules:
         if any(x in q for x in ["volume", "mute", "screenshot", "capture"]):
              return {"query": query, "category": "system", "args": q, "confidence": 0.95, "alternatives": [], "plan": []}
              
+        # Google Search (Explicit Rule)
+        if q.startswith("search "):
+            # Exception: "Search file" should go to files (handled by AI or add rule later if needed)
+            # For now, default "search X" to google search
+            topic = q.split(" ", 1)[1]
+            return {"query": query, "category": "google search", "args": topic, "confidence": 0.95, "alternatives": [], "plan": []}
+
         return None
