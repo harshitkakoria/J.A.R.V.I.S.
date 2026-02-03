@@ -92,6 +92,23 @@ class Executor:
             if not isinstance(result, ExecutionResult):
                 result = ExecutionResult(True, str(result))
             
+            # v7.4 Metadata Injection (for Explanation)
+            # If skill didn't provide rich data, inject what we know from the plan
+            if not result.data:
+                result.data = {
+                    "action": category, 
+                    "target": args,
+                    "reason": "user_request" # Default reason
+                }
+                # Special handling for context-sensitive close
+                if category == "close" and args in ["it", "this"]:
+                     # If we resolved context in DecisionMaker, args might be real app name now?
+                     # DecisionMaker returns resolved args.
+                     # But if we want to log that it was context-based:
+                     # We can't easily know here unless we pass that info down.
+                     # For now, default is fine.
+                     pass
+
             # Normalizing Trace: Always append result
             self.execution_trace.append(result)
             
@@ -106,13 +123,35 @@ class Executor:
                     "query": query,
                     "executor": self,
                     "alternatives": step.get("alternatives", []),
-                    "retried": False # Could track this if passed from caller, but for now single retry
+                    "retried": False 
                 }
                 
                 recovery_result = self.recovery_manager.attempt_recovery(result, recovery_context)
                 
-                # If recovery changed the outcome (or just gave a better error message)
-                return recovery_result
+                # Link recovery to original error for explanation
+                if recovery_result:
+                     # If successful retry
+                     if recovery_result.success:
+                         result.data["recovery"] = "retried successfully"
+                     elif "suggested" in recovery_result.message:
+                         result.data["recovery"] = "suggested an alternative"
+                     
+                     # We return the new result, but we should probably keep the trace clean?
+                     # The trace has the FAILURE. 
+                     # Should we append the RECOVERY result to trace too?
+                     # Yes, `recovery_manager` might call `execute_decision` which appends to trace?
+                     # `recovery_manager` calls `execute_decision` directly (no wrapper), so it DOES NOT append to trace automatically?
+                     # Verification in `verify_v7_3` showed it calls `execute_decision`.
+                     # `execute_decision` does NOT append to trace. `_execute_step` does.
+                     # So if `recovery_manager` calls raw `execute_decision`, it is invisible in trace unless we add it here.
+                     
+                     if recovery_result.success:
+                          # Create a success entry for the retry
+                          retry_entry = ExecutionResult(True, recovery_result.message, data=result.data) 
+                          retry_entry.data["action"] = "retry_" + str(category)
+                          self.execution_trace.append(retry_entry)
+                          
+                     return recovery_result
 
             # Validation
             if not self._validate(step, result):

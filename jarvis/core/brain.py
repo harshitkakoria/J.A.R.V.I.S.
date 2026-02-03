@@ -9,6 +9,7 @@ from jarvis.core.context import ContextManager
 from jarvis.core.vision import VisionManager
 from jarvis.core.health import HealthManager
 from jarvis.core.capabilities import build_capability_manifest
+from jarvis.core.explainer import Explainer
 
 class Brain:
     """Core logic engine combining Memory, Decision, and Execution."""
@@ -19,6 +20,7 @@ class Brain:
         self.context_manager = ContextManager()
         self.vision_manager = VisionManager()
         self.health_manager = HealthManager() # v7.2 Autonomy
+        self.explainer = Explainer() # v7.4 Explanation
         
         self.use_ai_decision = use_ai_decision
         self.decision_maker = None # Will be set below
@@ -69,6 +71,22 @@ class Brain:
         # 0.5 System Status Report (v7.2)
         if "status" in q and ("system" in q or "report" in q or "health" in q or "operational" in q):
             return self._generate_status_report(health_status, self.capabilities)
+            
+        # 0.6 Explanation Mode (v7.4)
+        # Check for "Why" / "Explain" triggers
+        # CRITICAL: Context Sensitivity - Only answer "Why" if we have a recent trace.
+        # If trace is empty, "Why is sky blue?" should fall through to AI General.
+        explanation_triggers = ["why", "explain", "what happened", "reason"]
+        is_explanation = any(t in q.split() for t in explanation_triggers)
+        # Also simple "why?" or "why did you..."
+        if q.startswith("why"):
+            is_explanation = True
+            
+        if is_explanation and self.executor.execution_trace:
+             # We have actions to explain!
+             # Explainer might need last decision too, but for now trace is the source of truth.
+             last_decision = {} 
+             return self.explainer.explain(self.executor.execution_trace, last_decision, health_status)
         
 
 
