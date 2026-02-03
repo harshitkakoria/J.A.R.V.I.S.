@@ -10,6 +10,7 @@ from jarvis.core.vision import VisionManager
 from jarvis.core.health import HealthManager
 from jarvis.core.capabilities import build_capability_manifest
 from jarvis.core.explainer import Explainer
+from jarvis.core.research.agent import ResearchAgent
 
 class Brain:
     """Core logic engine combining Memory, Decision, and Execution."""
@@ -21,6 +22,7 @@ class Brain:
         self.vision_manager = VisionManager()
         self.health_manager = HealthManager() # v7.2 Autonomy
         self.explainer = Explainer() # v7.4 Explanation
+        self.research_agent = ResearchAgent() # v7.5 Research
         
         self.use_ai_decision = use_ai_decision
         self.decision_maker = None # Will be set below
@@ -104,6 +106,36 @@ class Brain:
              selection_result = self._handle_file_selection(query)
              if selection_result:
                  return selection_result
+
+        # v7.5 Research Confirmation (Strict)
+        pending_research = self.memory.get_context("pending_research")
+        if pending_research:
+            if clean_text(query) == "yes":
+                # Proceed
+                self.memory.set_context("pending_research", None)
+                return self.research_agent.research(pending_research)
+            else:
+                # Abort on ANY other input
+                self.memory.set_context("pending_research", None)
+                if clean_text(query) == "no":
+                    return "Research aborted."
+                # If they said something else, treating as strict abort and continue processing query?
+                # User said: "Examples that should abort: 'Maybe', 'Later', silence, new command"
+                # So we abort research, and let the query flow through normal processing?
+                # Yes. "New command" implies we should process it.
+                # So we clear context and fall through.
+                # But we should probably acknowledge the abort if it wasn't a command?
+                # If query is "later", we say "Research aborted."? 
+                # Let's just clear context silent/logging and let query process.
+                # But if query is "maybe", defaulting to General Chat is fine.
+                pass 
+
+        # v7.5 Research Triggers
+        # "Research X", "Verify X"
+        if q.startswith("research ") or q.startswith("verify ") or q.startswith("compare sources"):
+             topic = query.replace("research ", "").replace("verify ", "").replace("compare sources ", "")
+             self.memory.set_context("pending_research", topic)
+             return "This will search multiple sources and cite them. Should I proceed?"
         
         # 0. Handle Pending Clarification
         pending = self.memory.get_pending_clarification()
