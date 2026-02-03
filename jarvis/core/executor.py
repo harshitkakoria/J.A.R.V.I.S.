@@ -3,6 +3,7 @@ from typing import Dict, Callable, List, Optional, Any
 from jarvis.utils.memory import Memory
 from jarvis.core.task_handler import RealTimeSearch, ChatBot, Automation
 from jarvis.core.models import ExecutionResult
+from jarvis.core.recovery import RecoveryManager
 
 class Executor:
     """Executes skills based on decisions or keywords."""
@@ -10,22 +11,24 @@ class Executor:
     def __init__(self, memory: Memory):
         self.memory = memory
         self.execution_trace = []
+        self.recovery_manager = RecoveryManager()
         
         # Initialize task handlers
         self.realtime_search = RealTimeSearch()
         self.chatbot = ChatBot()
         self.automation = None  # Will be set after skills registration
         self.skills: Dict[str, tuple] = {}
+        
+        # Initialize File Manager (v7.1) - Lazy load to avoid circular deps if needed
+        # But for now, init here to avoid 8x refresh
+        from jarvis.skills.file_manager import FileManager
+        self.file_manager = FileManager(self.memory)
 
     def register(self, name: str, handler: Callable, keywords: List[str]):
         """Register a skill handler with keywords."""
         self.skills[name] = (handler, [kw.lower() for kw in keywords])
         if self.automation is None:
             self.automation = Automation(self.skills)
-            
-        # Initialize File Manager (v7.1)
-        from jarvis.skills.file_manager import FileManager
-        self.file_manager = FileManager(self.memory)
             
     def execute(self, decision: Dict) -> ExecutionResult:
         """
@@ -93,7 +96,23 @@ class Executor:
             self.execution_trace.append(result)
             
             if not result.success:
-                return result
+                # v7.3 Failure Recovery
+                # Attempt to recover or suggest alternatives
+                print(f"[Executor] Action failed: {result.message}. Attempting recovery...")
+                
+                recovery_context = {
+                    "category": category,
+                    "args": args,
+                    "query": query,
+                    "executor": self,
+                    "alternatives": step.get("alternatives", []),
+                    "retried": False # Could track this if passed from caller, but for now single retry
+                }
+                
+                recovery_result = self.recovery_manager.attempt_recovery(result, recovery_context)
+                
+                # If recovery changed the outcome (or just gave a better error message)
+                return recovery_result
 
             # Validation
             if not self._validate(step, result):

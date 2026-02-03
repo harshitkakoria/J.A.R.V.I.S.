@@ -24,7 +24,7 @@ def main():
         brain.register("web", web.handle, ["search", "google"])
         brain.register("youtube", youtube.handle, ["play", "youtube", "watch"])
         brain.register("apps", apps.handle, ["open", "close", "launch", "start", "notepad", "calculator", "chrome", "chatgpt", "gemini"])
-        brain.register("system", system.handle, ["screenshot", "volume", "mute", "capture"])
+        brain.register("system", system.handle, ["screenshot", "volume", "mute", "capture", "wifi", "internet", "brightness", "dim", "screen"])
         brain.register("weather", weather.handle, ["weather", "temperature", "forecast", "rain", "hot", "cold"])
         brain.register("files", files.handle, ["create file", "create document", "delete file", "list files", "find", "search", "locate", "where is"])
         brain.register("scrape", scrape.handle, ["news", "headline", "gold", "stock", "market"])

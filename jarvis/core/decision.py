@@ -136,6 +136,14 @@ Rules:
         q = query.lower().strip()
         
         # Skip rules if multi-step indicators are present (Let AI handle plans)
+        # v7.2 - Allowing rules to run even on "and" because AI is fallback?
+        # Actually, if we return a single step for "open X and Y", we lose the second part.
+        # But if the rule matches "open X and Y" as a whole, it likely fails.
+        # However, for Automation Bias, we want "open chrome" to hit automation.
+        # If user says "open chrome and search x", rule "open" might catch "chrome and search x" as arg.
+        # This is risky.
+        # SAFE OPTION: Keep this skipped. Let AI handle complex sentences.
+        # The prompt BIAS is what matters.
         if " and " in q or " then " in q or "," in q:
             return None
         
@@ -143,13 +151,13 @@ Rules:
         if q.startswith("open ") or q.startswith("launch ") or q.startswith("start "):
             action = q.split(" ", 1)[1].strip()
             
+            # v7.3 Fix: Don't hijack file commands!
+            # If user says "open pdf", "open file", "open downloaded", pass to AI for 'file_search'
+            if any(kw in action for kw in ["pdf", "doc", "txt", "image", "photo", "file", "downloaded", "presentation", "ppt", "excel", "sheet"]):
+                return None
+            
             # v3.6 Safety: Rules must respect ambiguity
             if action in ["it", "this", "that", "them", "those", "something", "anything"]:
-                 # v4.0 Exception: If we have context, allow it?
-                 # No, "Open it" usually implies opening a file or something else,
-                 # "active window" is already open.
-                 # "Open it" might mean "Open the selected file". Not implemented yet.
-                 # So we stick to 0.0 confidence.
                  return {
                      "query": query,
                      "category": "open",
@@ -196,8 +204,27 @@ Rules:
         # Google Search (Explicit Rule)
         if q.startswith("search "):
             # Exception: "Search file" should go to files (handled by AI or add rule later if needed)
-            # For now, default "search X" to google search
+            if any(kw in q for kw in ["file", "pdf", "doc", "downloaded"]):
+                return None # Let AI handle file_search
+                
             topic = q.split(" ", 1)[1]
             return {"query": query, "category": "google search", "args": topic, "confidence": 0.95, "alternatives": [], "plan": []}
+
+        # v7.3 Fix: "Find" rule
+        if q.startswith("find "):
+             action = q.split(" ", 1)[1]
+             # If it looks like a file search, route to AI (file_search params are complex)
+             # OR map to file_search with raw args and let FileManager parse?
+             # FileManager expects {"args": {"type":...}}
+             # If we return category="file_search", args=action -> Executor maps it to FileManager.handle({"category":"file_search", "args": action})
+             # FileManager._parse_constraints handles natural language now?
+             # Looking at FileManager code: 
+             # args = intent.get("args", {})
+             # constraints = self._parse_constraints(args)
+             # _parse_constraints expects a DICT like {"type": "pdf"}. 
+             # It does NOT appear to handle a raw string "pdf i downloaded today".
+             # So we MUST let AI parse the natural language into JSON.
+             
+             return None # Let AI parse "find pdf..." into {"type": "pdf", ...}
 
         return None

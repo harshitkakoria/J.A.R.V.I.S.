@@ -7,6 +7,8 @@ from jarvis.core.executor import Executor
 from jarvis.core.models import ExecutionResult
 from jarvis.core.context import ContextManager
 from jarvis.core.vision import VisionManager
+from jarvis.core.health import HealthManager
+from jarvis.core.capabilities import build_capability_manifest
 
 class Brain:
     """Core logic engine combining Memory, Decision, and Execution."""
@@ -16,17 +18,25 @@ class Brain:
         self.executor = Executor(self.memory)
         self.context_manager = ContextManager()
         self.vision_manager = VisionManager()
-        self.use_ai_decision = use_ai_decision
-        self.decision_maker = None
+        self.health_manager = HealthManager() # v7.2 Autonomy
         
-        if use_ai_decision:
+        self.use_ai_decision = use_ai_decision
+        self.decision_maker = None # Will be set below
+        
+        # Check critical health on startup
+        health_status = self.health_manager.check_all()
+        self.capabilities = build_capability_manifest(health_status)
+        
+        if self.capabilities["llm_reasoning"] == "ENABLED" and use_ai_decision:
             try:
                 self.decision_maker = DecisionMaker()
                 print("[+] AI Decision Maker initialized")
             except Exception as e:
-                print(f"[!] AI Decision Maker failed: {e}, using keyword matching")
+                print(f"[!] AI Decision Maker init failed: {e}")
                 self.use_ai_decision = False
-                self.decision_maker = None
+        else:
+             print("[!] AI Decision Disabled (Offline or Missing Key)")
+             self.use_ai_decision = False
     
     def register(self, name: str, handler: Callable, keywords: List[str]):
         """Register a skill handler with keywords."""
@@ -51,10 +61,23 @@ class Brain:
         # Identify active window/process
         system_context = self.context_manager.get_context()
         
+        # 0.4 Refresh Capabilities (v7.2)
+        # Check health periodically (cached in manager)
+        health_status = self.health_manager.check_all()
+        self.capabilities = build_capability_manifest(health_status)
+        
+        # 0.5 System Status Report (v7.2)
+        if "status" in q and ("system" in q or "report" in q or "health" in q or "operational" in q):
+            return self._generate_status_report(health_status, self.capabilities)
+        
+
+
         # 0.2 Check for Vision Triggers (v6.0)
         # Explicit request to see/read screen
         vision_triggers = ["look at this", "look at my screen", "what is on my screen", "read this", "describe this", "what am i looking at"]
         if any(vt in q for vt in vision_triggers):
+             if self.capabilities["vision"] != "ENABLED":
+                 return "I cannot see the screen right now. Vision module is unavailable."
              return self.vision_manager.analyze(query)
         
         # 0.3 Handle File Selection (v7.1)
@@ -226,7 +249,7 @@ class Brain:
                 parts = query.split("i'm", 1)[1].strip().split()
                 if parts:
                     name = parts[0].lower()
-                    if name not in ["here", "back", "ready", "fine", "good", "ok", "jarvis"]:
+                    if name not in ["here", "back", "ready", "fine", "good", "ok", "jarvis", "greeting", "not", "asking", "telling", "talking", "speaking"]:
                         return parts[0].capitalize()
         except (IndexError, AttributeError):
             pass
@@ -363,3 +386,35 @@ class Brain:
                  return output_text
                  
         return None
+
+    def _generate_status_report(self, health: Dict, caps: Dict) -> str:
+        """Generate a natural language status report."""
+        report = ["System Status Report:"]
+        
+        # Internet
+        net = health.get("internet", {})
+        state = net.get("state")
+        if state == "HEALTHY":
+            report.append("✓ Internet: Online")
+        else:
+            report.append(f"❌ Internet: Offline ({net.get('error', 'Unknown')})")
+            
+        # LLM
+        llm = health.get("llm", {})
+        if llm.get("state") == "HEALTHY":
+            report.append("✓ Intelligence: Online (Groq)")
+        else:
+            report.append(f"⚠️ Intelligence: Limited ({llm.get('error', 'Unknown')})")
+            
+        # Vision
+        vis = health.get("vision", {})
+        if vis.get("state") == "HEALTHY":
+            report.append("✓ Vision: Online")
+        else:
+            report.append("⚠️ Vision: Unavailable")
+            
+        # Summary
+        if caps["llm_reasoning"] == "DISABLED":
+            report.append("\nNote: I am running in Offline Mode. I can only perform basic automation commands.")
+            
+        return "\n".join(report)
