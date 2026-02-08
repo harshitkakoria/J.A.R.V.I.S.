@@ -23,6 +23,11 @@ class Executor:
         # But for now, init here to avoid 8x refresh
         from jarvis.skills.file_manager import FileManager
         self.file_manager = FileManager(self.memory)
+        
+        # Image Generation (v7.5)
+        # We can lazy load or just import
+        from jarvis.skills.image import generate_image
+        self.register("image", generate_image, ["generate image", "create image", "make an image"])
 
     def register(self, name: str, handler: Callable, keywords: List[str]):
         """Register a skill handler with keywords."""
@@ -192,8 +197,8 @@ class Executor:
         """Execute a command based on AI category decision."""
         q = query.lower() if query else ""
         
-        # Automation tasks (Apps, System, Web, Media, Files)
-        if category in ["open", "close", "play", "system", "google search", "youtube search", "files"]:
+        # Automation tasks (Apps, System, Web, Media, Files, Context, Weather)
+        if category in ["open", "close", "play", "system", "google search", "youtube search", "files", "context", "weather"]:
             if self.automation:
                 # 3. Precision: Reconstruct command string for handlers that rely on keywords
                 # e.g. apps.handle("youtube") fails, but apps.handle("open youtube") works
@@ -212,6 +217,30 @@ class Executor:
             # args is the constraints dict
             intent = {"category": category, "args": action} # action here is the 'args' dict from decision
             return self.file_manager.handle(intent)
+            
+        # Image Generation (v7.5)
+        elif category == "image_generation":
+             # Action is the prompt
+             handler, _ = self.skills["image"]
+             return handler(action)
+
+        # Vision (v7.5)
+        elif category == "vision":
+             if not hasattr(self, 'vision'):
+                 from jarvis.skills.vision import VisionSkill
+                 self.vision = VisionSkill()
+             return self.vision.handle(action)
+
+        # Document Generation (v7.5)
+        elif category == "document_generation":
+             if not hasattr(self, 'document_generator'):
+                 # Convert query to document request
+                 from jarvis.skills.document import DocumentGenerator
+                 self.document_generator = DocumentGenerator()
+             
+             # Arg in decision is usually the user's prompt "write a poem..."
+             # We pass this to handle()
+             return self.document_generator.handle(action)
         
         # General conversation
         elif category == "general":
@@ -238,7 +267,15 @@ class Executor:
                     error="AMBIGUOUS_GENERAL"
                 )
             
+            # 3. Memory Retrieval (Short-term + Long-term)
             memory_context = self.memory.get_summary()
+            
+            # Semantic Recall (Long-term)
+            related_fact = self.memory.recall_semantic(query)
+            if related_fact:
+                memory_context += f"\n\nRelevant Past Memory: {related_fact}"
+                print(f"[+] Recalled: {related_fact}")
+
             return self.chatbot.chat(query, memory=memory_context)
         
         # Exit

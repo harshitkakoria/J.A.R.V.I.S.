@@ -33,7 +33,7 @@ class Listener:
             
             print("🌐 Loading speech recognition page...")
             self.driver = webdriver.Chrome(service=service, options=options)
-            self.driver.get(f"file:///{html_path.replace('\\', '/')}")
+            self.driver.get("file:///" + html_path.replace('\\', '/'))
             
             print("⏳ Waiting for page to load...")
             time.sleep(2)

@@ -88,15 +88,27 @@ class Memory:
         self.save()
     
     def get_summary(self) -> str:
-        """Get conversation summary."""
-        if not self.history:
-            return "No conversation history yet."
+        """Get conversation summary including context."""
+        summary_parts = []
         
-        recent = self.get_recent(3)
-        summary = "Recent conversation:\n"
-        for ex in recent:
-            summary += f"{ex['time']} You: {ex['user'][:50]}...\n"
-        return summary
+        # 1. Add Context (User info)
+        if self.context:
+            context_str = "Known Context:\n"
+            for k, v in self.context.items():
+                context_str += f"- {k}: {v}\n"
+            summary_parts.append(context_str)
+        
+        # 2. Add Recent History (Full)
+        if self.history:
+            history_str = "Recent Conversation:\n"
+            for ex in self.history: # Use all 10 items in deque
+                history_str += f"[{ex['time']}] User: {ex['user']}\n"
+                history_str += f"[{ex['time']}] JARVIS: {ex['jarvis']}\n"
+            summary_parts.append(history_str)
+        else:
+            summary_parts.append("No recent conversation.")
+            
+        return "\n".join(summary_parts)
 
     def save(self):
         """Save memory to file."""
