@@ -101,6 +101,12 @@ class Listener:
 
     def stop_speaking(self):
         """Resume listening after speaking."""
+        # Clear buffer to discard self-echo captured during speech
+        try:
+            if self.driver:
+                self.driver.execute_script("document.getElementById('output').innerHTML = ''")
+        except Exception:
+            pass
         self.is_speaking = False
     
     def stop(self):

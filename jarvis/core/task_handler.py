@@ -1,72 +1,91 @@
-"""Task Handlers - RealTimeSearch, ChatBot, Automation."""
 import os
-import requests
-from bs4 import BeautifulSoup
-import groq
-from dotenv import load_dotenv
-from rich.console import Console
+try:
+    # Provided by the `python-dotenv` package.
+    # If your environment doesn't have it installed, we still want JARVIS to run.
+    from dotenv import load_dotenv  # type: ignore[import-not-found]
+except Exception:
+    def load_dotenv(*args, **kwargs):  # type: ignore[no-redef]
+        return False
+
+try:
+    # Groq Python SDK (https://pypi.org/project/groq/)
+    from groq import Groq  # type: ignore[import-not-found]
+except Exception:
+    Groq = None
+try:
+    from tavily import TavilyClient  # type: ignore
+except Exception:
+    TavilyClient = None
+
+try:
+    from rich.console import Console  # type: ignore
+    console = Console()
+except Exception:
+    class _ConsoleFallback:
+        def print(self, *args, **kwargs):
+            print(*args)
+    console = _ConsoleFallback()
 
 load_dotenv()
-
-console = Console()
 
 USERNAME = os.getenv("USERNAME", "User")
 ASSISTANT_NAME = os.getenv("ASSISTANT_NAME", "JARVIS")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
 
 
 class RealTimeSearch:
-    """Search real-time data from Google and refine with AI."""
+    """Search real-time data using Tavily API and refine with AI."""
     
     def __init__(self):
-        self.groq_client = groq.Groq(api_key=GROQ_API_KEY)
+        if Groq and GROQ_API_KEY:
+            self.groq_client = Groq(api_key=GROQ_API_KEY)
+        else:
+            if not Groq:
+                console.print("[yellow]Groq SDK is not installed. AI refinement disabled.[/yellow]")
+            elif not GROQ_API_KEY:
+                console.print("[yellow]GROQ_API_KEY not found. AI refinement disabled.[/yellow]")
+            self.groq_client = None
+        if TAVILY_API_KEY and TavilyClient:
+            self.tavily = TavilyClient(api_key=TAVILY_API_KEY)  # type: ignore[misc]
+        else:
+            if not TavilyClient:
+                console.print("[yellow]Tavily is not installed. Real-time search disabled.[/yellow]")
+            elif not TAVILY_API_KEY:
+                console.print("[yellow]TAVILY_API_KEY not found. Real-time search disabled.[/yellow]")
+            self.tavily = None
     
     def search(self, query: str) -> str:
-        """Search Google and refine results with AI."""
+        """Search Web and refine results with AI."""
+        if not self.tavily:
+            return "Search is unavailable (Missing API Key)."
+
         try:
-            # Search Google
-            search_results = self._google_search(query)
+            # Search Tavily
+            console.print(f"[green]Searching Tavily for: {query}...[/green]")
+            search_result = self.tavily.search(query, search_depth="basic", max_results=5)
             
-            if not search_results:
+            # Format results
+            context = "\n".join([
+                f"- [{res['title']}]({res['url']}): {res['content']}" 
+                for res in search_result.get('results', [])
+            ])
+            
+            if not context:
                 return f"No results found for {query}"
             
             # Refine with AI
-            refined = self._refine_with_ai(query, search_results)
+            refined = self._refine_with_ai(query, context)
             return refined
         
         except Exception as e:
             console.print(f"[red]RealTimeSearch Error: {e}[/red]")
             return f"Unable to search for {query} right now."
-    
-    def _google_search(self, query: str, num_results: int = 3) -> str:
-        """Search Google for information."""
-        try:
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-            }
-            search_url = f"https://www.google.com/search?q={query}"
             
-            # Note: This is a simplified approach. For production, use Google API or SerpAPI
-            response = requests.get(search_url, headers=headers, timeout=5)
-            response.raise_for_status()
-            
-            soup = BeautifulSoup(response.content, 'html.parser')
-            results = []
-            
-            # Extract snippets
-            for g in soup.find_all('div', class_='g'):
-                text = g.get_text()
-                if text and len(results) < num_results:
-                    results.append(text[:200])
-            
-            return "\n".join(results) if results else f"Search results for: {query}"
-        
-        except Exception as e:
-            console.print(f"[yellow]Search fallback: {e}[/yellow]")
-            return f"Searching for {query}..."
-    
     def _refine_with_ai(self, query: str, search_data: str) -> str:
         """Refine search results using Groq AI."""
+        if not self.groq_client:
+            return search_data
         try:
             from datetime import datetime
             current_time = datetime.now().strftime("%A, %B %d, %Y %I:%M %p")
@@ -111,7 +130,7 @@ class ChatBot:
             system_prompt = f"""Hello, I am {USERNAME}, You are a very accurate and advanced AI chatbot named {ASSISTANT_NAME} which also has real-time up-to-date information from the internet.
 *** Current Date and Time: {current_time} ***
 *** Reply in only English, even if the question is in Hindi, reply in English.***
-*** Personality: Be conversational, natural, and helpful. Speak in full sentences as an assistant ***
+*** Personality: Be extremely concise, direct, and helpful. Avoid polite filler. Just answer the question. ***
 *** Rule: If asked for the time, ONLY mention the time. If asked for the date, ONLY mention the date. Do not combine them unless asked. ***
 *** Do not provide notes in the output, just answer the question and never mention your training data. """
             
@@ -125,8 +144,13 @@ class ChatBot:
                 system_instruction=system_prompt,
                 json_mode=False
             )
-            
-            return response
+            if not response or not str(response).strip():
+                # Most common cause: GROQ not configured or request failed.
+                if not GROQ_API_KEY:
+                    return "AI chat is unavailable: GROQ_API_KEY is not set. Add it to your .env and restart."
+                return "I couldn't generate a response right now. Please try again."
+
+            return response.strip()
         
         except Exception as e:
             console.print(f"[red]ChatBot Error: {e}[/red]")
@@ -153,7 +177,8 @@ class Automation:
             "close": "apps",
             "system": "system",
             "context": "basic",
-            "weather": "weather"
+            "weather": "weather",
+            "files": "files"
         }
         
         skill_name = automation_map.get(category)

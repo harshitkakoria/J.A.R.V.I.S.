@@ -1,23 +1,25 @@
 # J.A.R.V.I.S v2.0
 **Simple, Fast Voice Assistant - Talks & Remembers**
 
-## What Changed in v2.1?
-- **🚀 Powered by Groq**: Ultra-fast AI decision making using Llama 3.
-- **⚡ Real-time Data**: improved accuracy for news, stocks, and weather.
-- **🛠️ Bug Fixes**: Fixed `WinError 193` when opening apps, silent background app launching.
-- **🧹 Cleaner Console**: Application logs are now suppressed.
-- **✨ Talks back** - TTS with edge-tts (natural voice)
-- **✨ Remembers conversations** - tracks last 10 exchanges
-- **✨ Knows your name** - personalized responses
+## About
+**J.A.R.V.I.S v2.5** is a high-speed, voice-activated AI assistant designed for Windows. 
+It uses **Groq (Llama 3)** for intelligence, **Selenium** for eyes, and **Python** for system control.
+
+- **� Ultra-Fast**: Powered by Groq's LPU.
+- **⚡ Real-time**: Live news, stocks, and weather.
+- **✨ Talks back**: Natural voice response (Edge-TTS).
+- **🧠 Remembers**: Context-aware memory of past conversations.
 
 ## Features
 ✅ **Basic**: time, date, jokes, exit
 ✅ **Web**: Google search, open websites
 ✅ **YouTube**: play videos (auto-play), search
 ✅ **Apps**: open/close ANY app (fuzzy match, shortcuts, Store apps, PWAs)
-✅ **System**: screenshot, volume control
+✅ **System**: screenshot, volume, brightness, clipboard manager
+✅ **Media**: global play/pause, next/prev track control
+✅ **Monitoring**: CPU, RAM, battery status
 ✅ **Weather**: current weather (free API)
-✅ **Files**: create Word/PDF/PowerPoint, delete, list
+✅ **Files**: create Word/PDF/PowerPoint, delete, list, folder search
 ✅ **Real-time AI**: news headlines, gold prices, stocks, weather (via Groq/Llama 3)
 ✅ **Memory**: remembers conversations, your name, context
 
@@ -57,10 +59,12 @@ Apps (Powered by AppOpener):
 - "open sptfy" (autocorrects typo)
 - "close spotify"
 
-System:
+System & Media:
 - "take a screenshot"
-- "volume up"
-- "mute"
+- "volume up" / "mute"
+- "play music" / "pause" / "next track"
+- "cpu usage" / "battery status"
+- "read clipboard" / "clear clipboard"
 
 Weather:
 - "what's the weather"
@@ -69,14 +73,9 @@ Weather:
 Files:
 - "create word document"
 - "create pdf"
-- "create presentation"
 - "list files"
+- "find my 'Resume' folder"
 - "delete file confirm"
-
-Scrape:
-- "latest news"
-- "gold price"
-- "stock market"
 
 Exit:
 - "exit" (will say goodbye with your name)
@@ -107,18 +106,17 @@ JARVIS: You asked: 'hello'
 ```
 jarvis/
 ├── core/
-│   ├── brain.py       # 80 lines - routing + memory
-│   ├── listener.py    # 60 lines - Selenium STT
-│   └── speech.py      # 30 lines - edge-tts
+│   ├── brain.py       # Routing + memory
+│   ├── listener.py    # Selenium STT
+│   └── llm.py         # Groq Integration
 ├── skills/
 │   ├── basic.py       # time, date, jokes
 │   ├── web.py         # search, websites
-│   ├── youtube.py     # play, search (pywhatkit)
-│   ├── apps.py        # open/close (Start Menu + PWA + web fallback)
-│   ├── system.py      # screenshot, volume
+│   ├── youtube.py     # play, search
+│   ├── apps.py        # open/close
+│   ├── system.py      # screenshot, volume, media, clipboard, status
 │   ├── weather.py     # current weather
-│   ├── files.py       # create docs, delete, list
-│   └── scrape.py      # news, gold, stocks
+│   └── file_manager.py# create docs, delete, list, search folders
 └── utils/
     ├── helpers.py     # text cleaning
     └── memory.py      # conversation tracking
@@ -135,12 +133,6 @@ jarvis/
 ```bash
 pip install selenium webdriver-manager edge-tts pywhatkit pyjokes psutil pyautogui python-dotenv requests beautifulsoup4 python-docx python-pptx reportlab pycaw
 ```
-
-## Backup
-Your old complex version is in `jarvis_backup/` folder
-**Just A Rather Very Intelligent System**
-
-I am trynna to be Iron man.
 
 ## Project Structure
 
@@ -209,7 +201,6 @@ Jarvis/
    pip install -r requirements.txt
    ```
 
-4. **Set up environment variables**:
 4. **Set up environment variables**:
    - The `.env` file should contain:
      ```env

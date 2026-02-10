@@ -77,6 +77,7 @@ def clean_text(text: str) -> str:
     
     # 1. Lowercase
     text = text.lower()
+    original_lower = text
     
     # 2. Remove Filler Words
     # distinct words only to avoid matching inside words
@@ -109,6 +110,11 @@ def clean_text(text: str) -> str:
     
     # Final cleanup
     text = re.sub(r'\s+', ' ', text).strip()
+    
+    # v7.6 Fix: If cleaning removed everything (e.g. "Hello") OR left only punctuation (e.g. "!"), return original.
+    # This ensures greetings aren't wiped out, causing LLM hallucinations.
+    if not text or not any(c.isalnum() for c in text):
+        return original_lower
     
     return text
 

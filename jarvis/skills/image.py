@@ -45,7 +45,7 @@ def generate_image(prompt: str) -> str:
             subprocess.run(['open', filepath]) # Mac
             # Linux usually xdg-open but skipping for now as user is Windows
             
-        return f"Image generated and saved to Downloads: {filename}"
+        return f"I have generated the image and saved it to Downloads."
         
     except Exception as e:
         print(f"❌ Image Gen Error: {e}")

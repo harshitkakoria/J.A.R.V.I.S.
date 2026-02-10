@@ -24,11 +24,9 @@ class Executor:
         from jarvis.skills.file_manager import FileManager
         self.file_manager = FileManager(self.memory)
         
-        # Image Generation (v7.5)
-        # We can lazy load or just import
-        from jarvis.skills.image import generate_image
-        self.register("image", generate_image, ["generate image", "create image", "make an image"])
-
+        # Register File Manager as 'files' skill (v7.6 Unification)
+        self.register("files", self.file_manager.handle, ["file", "search", "find", "open", "create", "delete", "locate"])
+        
     def register(self, name: str, handler: Callable, keywords: List[str]):
         """Register a skill handler with keywords."""
         self.skills[name] = (handler, [kw.lower() for kw in keywords])
@@ -83,8 +81,8 @@ class Executor:
         if category is None:
              return ExecutionResult(False, "I need more details before doing that.", error="NO_CATEGORY")
              
-        if confidence < 0.75:
-             # Safety net if Brain missed it
+        if confidence < 0.75 and category != "general":
+             # Safety net if Brain missed it (and not general conversation)
              return ExecutionResult(False, "Command unclear, awaiting clarification.", error="LOW_CONFIDENCE")
 
         # Map to existing execution logic
@@ -197,40 +195,37 @@ class Executor:
         """Execute a command based on AI category decision."""
         q = query.lower() if query else ""
         
-        # Automation tasks (Apps, System, Web, Media, Files, Context, Weather)
-        if category in ["open", "close", "play", "system", "google search", "youtube search", "files", "context", "weather"]:
+        # Automation tasks (Apps, System, Web, Media, Context, Weather)
+        if category in ["open", "close", "play", "system", "google search", "youtube search", "context", "weather"]:
             if self.automation:
                 # 3. Precision: Reconstruct command string for handlers that rely on keywords
                 # e.g. apps.handle("youtube") fails, but apps.handle("open youtube") works
-                if action and category not in action.lower():
+                
+                # Handling Dict args from LLM rules (v7.6 Fix)
+                # Some categories like 'context' expect strings, but LLM might return {"arg": "value"}
+                if isinstance(action, dict) and category == "context":
+                    target = query # Fallback to original natural language for context
+                
+                elif action and isinstance(action, str) and category not in action.lower():
                      target = f"{category} {action}"
                 else:
                      target = action if action else query
+                
                 return self.automation.route_automation(category, target)
         
         # Real-time search
         elif category == "realtime":
             return self.realtime_search.search(query)
             
-        # File Search (v7.1)
+        # File Management (v7.6 Unified)
+        elif category == "files":
+            # action is the 'args' dict from decision
+            return self.file_manager.handle({"category": "files", "args": action})
+
+        # Legacy File Search (Backwards compat if Brain uses older prompt)
         elif category == "file_search":
-            # args is the constraints dict
-            intent = {"category": category, "args": action} # action here is the 'args' dict from decision
-            return self.file_manager.handle(intent)
+            return self.file_manager.handle({"category": "files", "args": {"action": "search", **(action if isinstance(action, dict) else {})}})
             
-        # Image Generation (v7.5)
-        elif category == "image_generation":
-             # Action is the prompt
-             handler, _ = self.skills["image"]
-             return handler(action)
-
-        # Vision (v7.5)
-        elif category == "vision":
-             if not hasattr(self, 'vision'):
-                 from jarvis.skills.vision import VisionSkill
-                 self.vision = VisionSkill()
-             return self.vision.handle(action)
-
         # Document Generation (v7.5)
         elif category == "document_generation":
              if not hasattr(self, 'document_generator'):

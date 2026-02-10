@@ -28,11 +28,30 @@ class FileIndexer:
                 if not loc.exists(): continue
                 
                 # Walk with depth limit manually-ish or just os.walk
-                for root, _, files in os.walk(loc):
+                for root, dirs, files in os.walk(loc):
                     # Safety: Skip heavy/system folders
                     if any(x in root.lower() for x in ["node_modules", ".git", "appdata", "library", "__pycache__", "venv"]):
+                        # Don't descend into these either
+                        dirs[:] = [] 
                         continue
                         
+                    # 1. Index Directories
+                    for d in dirs:
+                        if d.startswith("."): continue
+                        try:
+                            dpath = Path(root) / d
+                            stat = dpath.stat()
+                            self.index.append({
+                                "path": str(dpath),
+                                "name": d,
+                                "ext": "folder", # Special type for folders
+                                "modified": datetime.fromtimestamp(stat.st_mtime),
+                                "accessed": datetime.fromtimestamp(stat.st_atime),
+                                "location": loc.name
+                            })
+                        except: continue
+
+                    # 2. Index Files
                     for file in files:
                         try:
                             path = Path(root) / file
@@ -74,9 +93,16 @@ class FileIndexer:
         for f in self.index:
             # 1. Type Filter
             if "type" in constraints:
-                target_type = constraints["type"]
-                if not target_type.startswith("."): target_type = f".{target_type}"
-                if f["ext"] != target_type.lower():
+                raw_type = constraints["type"].lower().strip()
+                
+                if raw_type == "folder":
+                    target_type = "folder"
+                elif not raw_type.startswith("."):
+                    target_type = f".{raw_type}"
+                else:
+                    target_type = raw_type
+                    
+                if f["ext"] != target_type:
                     continue
 
             # 2. Time Range
@@ -94,9 +120,7 @@ class FileIndexer:
                 if f["location"] not in allowed:
                     continue
             
-            # 4. Partial Name Match (if provided in 'action' or extra arg?)
-            # Logic handled separately usually? 
-            # If constraint has 'name_contains'?
+            # 4. Partial Name Match
             if "name_contains" in constraints:
                  if constraints["name_contains"].lower() not in f["name"].lower():
                      continue

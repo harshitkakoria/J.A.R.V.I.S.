@@ -1,13 +1,21 @@
 """Decision Making Model using Google Gemini."""
 import os
 import json
-from rich.console import Console
 from dotenv import load_dotenv
 from jarvis.core.llm import LLM
 
 load_dotenv()
 
-console = Console()
+try:
+    from rich.console import Console  # type: ignore
+    console = Console()
+except Exception:
+    # `rich` is optional; fall back to plain printing if not installed.
+    class _ConsoleFallback:
+        def print(self, *args, **kwargs):
+            print(*args)
+
+    console = _ConsoleFallback()
 
 
 class DecisionMaker:
@@ -23,7 +31,8 @@ class DecisionMaker:
         self.functions = [
             "exit", "general", "realtime", "weather", "open", "close", 
             "play", "system", "content", "context", "google search", 
-            "youtube search", "reminder", "file_search", "image_generation"
+            "youtube search", "reminder", "files",
+            "document_generation"
         ]
         
         # Optimized system prompt for Llama 3 on Groq (JSON Mode)
@@ -31,33 +40,38 @@ class DecisionMaker:
 Your job is to categorize user queries into specific function calls and output JSON.
 
 Available Functions:
-1. general (query) -> For conversational questions, math, facts, or greetings.
-2. realtime (query) -> For questions requiring up-to-date live data (news, stock prices, sports scores, current events).
-3. weather (query) -> For weather forecasts, temperature, rain check.
-4. open (app_name) -> To launch an application or website.
-5. close (app_name) -> To close an application.
-6. play (song_name) -> To play music or video.
-7. system (action) -> For volume control, mute/unmute, screenshot.
-8. google search (topic) -> For explicit web searches OR generic "search for" queries (e.g. "search dsa").
-9. youtube search (topic) -> For explicit YouTube searches.
-10. file_search (constraints) -> To find files. Args: {"type": "pdf", "time_range": "yesterday", "action": "downloaded"}
-11. image_generation (prompt) -> To generate images. Example: "Generate an image of a cat".
-12. context (query) -> For System Time, Date, Jokes, or Identity.
-13. exit -> When user says goodbye.
+1. general (query) -> Conversational questions, math, facts, chit-chat.
+2. realtime (query) -> Live data & News. "Who is the president?", "Stock price of Apple", "Score of the game", "Latest news on AI".
+3. weather (query) -> Weather.
+4. open (app_name) -> Launch app/site.
+5. close (app_name) -> Close app.
+6. play (song_name) -> Media.
+7. system (action) -> PC Control. "volume up", "brightness 100%", "screenshot", "wifi off".
+    - Media: "play music", "next track", "pause video".
+    - Status: "cpu usage", "how much ram", "battery level".
+    - Clipboard: "read clipboard", "clear clipboard", "copy hello world".
+8. google search (topic) -> Web search.
+9. youtube search (topic) -> Video search.
+10. files (action, details) -> File Management.
+    - Search: {"action": "search", "name_contains": "invoice", "time_range": "yesterday", "type": "pdf", "location": "downloaded"}
+    - Search Folders: {"action": "search", "type": "folder", "name_contains": "project"}
+    - Create: {"action": "create", "name": "notes.txt", "content": "optional"} (For blank/simple files)
+    - Delete: {"action": "delete", "name": "notes.txt", "confirm": true}
+11. document_generation (topic) -> For AI WRITING (essays, reports). {"topic": "cover letter", "format": "pdf"}
+12. image_generation (prompt) -> Generate images.
+13. context (query) -> Current Time, Current Date, JARVIS Identity ("who are you"). (NOT user identity or facts).
+14. exit -> Quit.
 
 Rules:
 - Output ONLY a valid JSON object.
-- **CRITICAL BIAS**: Prioritize using specific functions (realtime, vision, document_generation, file_search, system) over 'general'.
-- Use 'general' ONLY for greetings, philosophy, personal questions. (EXCLUDE Time/Date).
-- Queries like "what time is it", "date", "tell me a joke", "who are you" MUST use 'context'.
-- Queries like "look at this", "what do you see", "screen" MUST use 'vision'.
-- Queries like "write a pdf", "create a report", "make a word doc" MUST use 'document_generation'.
-- Queries like "weather", "temperature", "rain" MUST use 'weather'.
-- Queries like "search X", "open Y" MUST use specific functions.
-- Format (Single Step): {"category": "function_name", "args": "content", "confidence": 0.0-1.0, "alternatives": ["alt 1", "alt 2"]}
-- Format (Multi-Step): {"plan": [{"category": "cat1", "args": "args1"}, {"category": "cat2", "args": "args2"}], "confidence": 0.0-1.0}
-- Use "plan" correctly by splitting commands with "and", "then".
-- Example: "Open chrome and search cars" -> Plan: [{"category": "open", "args": "chrome"}, {"category": "google search", "args": "cars"}]
+- **CRITICAL**: Distinguish between `files` (System ops) and `document_generation` (AI Writing).
+  - "Create a new text file" -> `files` (action="create")
+  - "Write a story and save as PDF" -> `document_generation`
+  - "Find my resume" -> `files` (action="search")
+  - "Delete that file" -> `files` (action="delete")
+- Use specific functions over 'general'.
+- Format: {"category": "function_name", "args": {arguments}, "confidence": 0.0-1.0}
+- Example: "Find pdfs from yesterday" -> {"category": "files", "args": {"action": "search", "type": "pdf", "time_range": "yesterday"}}
 - Example: "Find that PDF I downloaded yesterday" -> {"category": "file_search", "args": {"type": "pdf", "time_range": "yesterday", "action": "downloaded"}}
 - Use "plan" ONLY if the user asks for multiple distinct actions.
 - "confidence" should be a float between 0.0 and 1.0 indicating your certainty.
@@ -133,6 +147,19 @@ Rules:
     def _match_rules(self, query: str, context=None) -> dict:
         """Match query against hardcoded rules for speed."""
         q = query.lower().strip()
+        
+        # v7.6 Hardcoded Greetings (Prevent LLM Hallucinations on short inputs)
+        # Strip punctuation for robust matching "hello!" -> "hello"
+        clean_q = q.strip(".,!? ")
+        if clean_q in ["hello", "hi", "hey", "hola", "greetings", "good morning", "good evening", "how are you", "what's up"]:
+             return {
+                "query": query,
+                "category": "general",
+                "args": query,
+                "confidence": 1.0,
+                "alternatives": [],
+                "plan": []
+            }
         
         # Skip rules if multi-step indicators are present (Let AI handle plans)
         # v7.2 - Allowing rules to run even on "and" because AI is fallback?

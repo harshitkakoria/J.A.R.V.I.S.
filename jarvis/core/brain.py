@@ -6,7 +6,6 @@ from jarvis.core.decision import DecisionMaker
 from jarvis.core.executor import Executor
 from jarvis.core.models import ExecutionResult
 from jarvis.core.context import ContextManager
-from jarvis.core.vision import VisionManager
 from jarvis.core.health import HealthManager
 from jarvis.core.capabilities import build_capability_manifest
 from jarvis.core.explainer import Explainer
@@ -15,10 +14,9 @@ class Brain:
     """Core logic engine combining Memory, Decision, and Execution."""
     
     def __init__(self, use_ai_decision=True):
-        self.memory = Memory()
+        self.memory = Memory(max_size=None) # v7.6 Enable Unlimited History (User Request)
         self.executor = Executor(self.memory)
         self.context_manager = ContextManager()
-        self.vision_manager = VisionManager()
         self.health_manager = HealthManager() # v7.2 Autonomy
         self.explainer = Explainer() # v7.4 Explanation
         
@@ -90,14 +88,6 @@ class Brain:
         
 
 
-        # 0.2 Check for Vision Triggers (v6.0)
-        # Explicit request to see/read screen
-        vision_triggers = ["look at this", "look at my screen", "what is on my screen", "read this", "describe this", "what am i looking at"]
-        if any(vt in q for vt in vision_triggers):
-             if self.capabilities["vision"] != "ENABLED":
-                 return "I cannot see the screen right now. Vision module is unavailable."
-             return self.vision_manager.analyze(query)
-        
         # 0.3 Handle File Selection (v7.1)
         # If we have file candidates in context and user says "first one", etc.
         if self.memory.get_context("file_candidates"):
@@ -146,10 +136,16 @@ class Brain:
         # Handle memory queries (To be moved to Memory Layer in v3.4)
         if any(kw in q for kw in ["remember", "recall", "what did", "what i asked", "what i told", "what was"]):
             return self._handle_memory_query(query)
+            
+        # v7.6 User Identity Check (Direct Memory Access)
+        if "who am i" in q or "what is my name" in q or "who i am" in q:
+             name = self.memory.get_context("user_name")
+             if name:
+                 return f"You are {name}."
+             return "I don't know your name yet. You can tell me by saying 'My name is...'"
         
         # Extract name if user introduces themselves
-        # Fix: Don't trigger on "Who i am?"
-        if ("my name is" in q or "i am" in q or "i'm" in q) and not q.startswith("who") and not q.startswith("what"):
+        if ("my name is" in q or "i am" in q or "i'm" in q) and not q.startswith("who") and not q.startswith("what") and not q.startswith("where"):
             name = self._extract_name(query)
             if name:
                 self.memory.set_context("user_name", name)
@@ -172,8 +168,9 @@ class Brain:
                 plan = decision.get("plan", [])
                 
                 # Confidence Check
-                # Apply to ALL categories (including general) for safety
-                if confidence < 0.75:
+                # Apply to ALL categories (except general, which is safe catch-all)
+                # v7.6 Fix: Users were blocked on "general" queries with low confidence.
+                if category != "general" and confidence < 0.75:
                     # Low confidence on an action -> Clarify
                     self.memory.set_pending_clarification({
                         "original_query": query,
@@ -235,7 +232,7 @@ class Brain:
                  # Search whole query is simplest.
                  semantic_fact = self.memory.recall_semantic(query)
                  if semantic_fact:
-                     return f"I seem to recall you mentioning: '{semantic_fact}'. Is that correct?"
+                     return f"I seem to recall:\n{semantic_fact}\nIs that correct?"
                  return self.memory.get_summary()
             
             # Simple "remember" command might be summary request still?
@@ -243,11 +240,13 @@ class Brain:
 
         # General recall query (e.g. "What is my favorite color?")
         # If it didn't match specific "what did I say", try semantic
+        # If it didn't match specific "what did I say", try semantic
         semantic_fact = self.memory.recall_semantic(query)
         if semantic_fact:
-            return f"I seem to recall you mentioning: '{semantic_fact}'. Is that correct?"
+            # v7.6 Fix: Explain that this is from memory
+            return f"Based on our past conversations, I recall:\n{semantic_fact}\nIs that what you were looking for?"
         
-        return "What would you like me to recall?"
+        return "I don't have a specific memory of that. Could you provide more details?"
     
     def _extract_name(self, query: str) -> str:
         """Extract user's name from introduction."""
@@ -261,13 +260,15 @@ class Brain:
                 parts = query.split("i am", 1)[1].strip().split()
                 if parts:
                     name = parts[0].lower()
-                    if name not in ["here", "back", "ready", "fine", "good", "ok", "jarvis"]:
+                    if len(name) < 2 and name != "j": # Allow 'J' (MIB) but not 'a', 'i'
+                        return None
+                    if name not in ["here", "back", "ready", "fine", "good", "ok", "jarvis", "from", "where", "who", "what", "how", "why", "when", "a", "an", "the", "one"]:
                         return parts[0].capitalize()
             elif "i'm" in q:
                 parts = query.split("i'm", 1)[1].strip().split()
                 if parts:
                     name = parts[0].lower()
-                    if name not in ["here", "back", "ready", "fine", "good", "ok", "jarvis", "greeting", "not", "asking", "telling", "talking", "speaking"]:
+                    if name not in ["here", "back", "ready", "fine", "good", "ok", "jarvis", "greeting", "not", "asking", "telling", "talking", "speaking", "from", "where"]:
                         return parts[0].capitalize()
         except (IndexError, AttributeError):
             pass

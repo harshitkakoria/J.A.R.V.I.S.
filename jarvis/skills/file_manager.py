@@ -16,26 +16,33 @@ class FileManager:
     def __init__(self, memory: Memory):
         self.indexer = FileIndexer()
         self.memory = memory
-        # Initialize index on startup
-        self.indexer.refresh()
+        # Lazy index build: avoid long startup scans.
+        # The index will refresh automatically on the first file search.
 
     def handle(self, intent: Dict) -> ExecutionResult:
         """
-        Handle 'file_search' intent from Brain.
+        Handle 'files' intent from Brain.
         Intent structure:
         {
-            "category": "file_search",
+            "category": "files",
             "args": {
-                "type": "pdf", # or 'doc', 'image'
-                "time_range": "yesterday", # or specific date string? Brain converts? 
-                                          # Ideally Brain gives 'yesterday' and we parse relative time here 
-                                          # because Brain doesn't know 'today' accurately without context injection overload.
-                "action": "downloaded", # implies location
-                "name_contains": "invoice" # optional
+                "action": "search" | "create" | "delete",
+                # Search args
+                "type": "pdf", "time_range": "yesterday", "name_contains": "invoice",
+                # Create/Delete args
+                "name": "notes.txt", "content": "..."
             }
         }
         """
         args = intent.get("args", {})
+        action = args.get("action", "search") # Default to search
+        
+        if action == "create":
+            return self.create_file(args)
+        elif action == "delete":
+            return self.delete_file(args)
+        
+        # Default: Search
         
         # 1. Parse Constraints
         constraints = self._parse_constraints(args)
@@ -46,14 +53,15 @@ class FileManager:
         
         # 3. Handle Results
         if not results:
-            return ExecutionResult(False, "I couldn't find any matching files.")
+            return ExecutionResult(False, "I couldn't find any matching items.")
             
         if len(results) == 1:
-            file = results[0]
-            self.memory.set_context("file_candidates", [file])
+            item = results[0]
+            item_type = "folder" if item["ext"] == "folder" else "file"
+            self.memory.set_context("file_candidates", [item])
             return ExecutionResult(
                 True, 
-                f"I found one file: '{file['name']}'. Should I open it?",
+                f"I found one {item_type}: '{item['name']}'. Should I open it?",
                 data={"count": 1, "candidates": results}
             )
             
@@ -63,12 +71,13 @@ class FileManager:
         # Format list for display/TTS
         choices = []
         for i, r in enumerate(results[:5]): # Limit to 5
-            choices.append(f"{i+1}. {r['name']} ({r['location']})")
+            item_type = "[DIR]" if r["ext"] == "folder" else "[FILE]"
+            choices.append(f"{i+1}. {item_type} {r['name']} ({r['location']})")
         
         choices_str = "\n".join(choices)
         return ExecutionResult(
             True,
-            f"I found multiple files:\n{choices_str}\nWhich one should I open?",
+            f"I found multiple items:\n{choices_str}\nWhich one should I open?",
             data={"count": len(results), "candidates": results}
         )
 
@@ -130,3 +139,97 @@ class FileManager:
             c["name_contains"] = args["name_contains"]
             
         return c
+
+    # --- New Methods from files.py ---
+
+    def create_file(self, details: Dict) -> ExecutionResult:
+        """Create a blank/template file."""
+        from pathlib import Path
+        import subprocess
+        
+        name = details.get("name", f"file_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt")
+        # Handle implied types if name has no extension
+        if "." not in name:
+            if details.get("type") == "word": name += ".docx"
+            elif details.get("type") == "pdf": name += ".pdf"
+            elif details.get("type") == "ppt": name += ".pptx"
+            else: name += ".txt"
+            
+        downloads = Path.home() / "Downloads"
+        downloads.mkdir(exist_ok=True)
+        filepath = downloads / name
+        
+        try:
+            if name.endswith(".docx"):
+                return self._create_word(filepath)
+            elif name.endswith(".pdf"):
+                return self._create_pdf(filepath)
+            elif name.endswith(".pptx"):
+                return self._create_ppt(filepath)
+            else:
+                filepath.touch()
+                try:
+                    subprocess.Popen(["notepad.exe", str(filepath)])
+                except: pass
+                return ExecutionResult(True, f"Created {name} in Downloads", data={"path": str(filepath)})
+        except Exception as e:
+            return ExecutionResult(False, f"Failed to create file: {e}")
+
+    def delete_file(self, details: Dict) -> ExecutionResult:
+        """Delete a file (Safety: Only Downloads for now)."""
+        from pathlib import Path
+        
+        name = details.get("name")
+        if not name:
+             return ExecutionResult(False, "Which file should I delete?")
+             
+        # Safety: Require explicit confirmation in the command or a 2-step process
+        # But for now, we'll check if 'confirm' is in details (passed by Brain?)
+        if not details.get("confirm"):
+             return ExecutionResult(False, f"Please say 'delete {name} confirm' to safely delete it.")
+             
+        downloads = Path.home() / "Downloads"
+        target = downloads / name
+        
+        if not target.exists():
+             # Try fuzzy match?
+             return ExecutionResult(False, f"File {name} not found in Downloads.")
+             
+        try:
+            target.unlink()
+            return ExecutionResult(True, f"Deleted {name}")
+        except Exception as e:
+            return ExecutionResult(False, f"Failed to delete: {e}")
+
+    # --- Helpers ---
+    def _create_word(self, path) -> ExecutionResult:
+        try:
+            from docx import Document
+            import subprocess
+            doc = Document()
+            doc.add_heading("Document", 0)
+            doc.save(str(path))
+            subprocess.Popen(["start", str(path)], shell=True)
+            return ExecutionResult(True, f"Created Word doc: {path.name}")
+        except ImportError: return ExecutionResult(False, "Install python-docx")
+
+    def _create_pdf(self, path) -> ExecutionResult:
+        try:
+            from reportlab.pdfgen import canvas
+            import subprocess
+            c = canvas.Canvas(str(path))
+            c.drawString(100, 750, "Created by JARVIS")
+            c.save()
+            subprocess.Popen(["start", str(path)], shell=True)
+            return ExecutionResult(True, f"Created PDF: {path.name}")
+        except ImportError: return ExecutionResult(False, "Install reportlab")
+
+    def _create_ppt(self, path) -> ExecutionResult:
+        try:
+            from pptx import Presentation
+            import subprocess
+            prs = Presentation()
+            prs.save(str(path))
+            subprocess.Popen(["start", str(path)], shell=True)
+            return ExecutionResult(True, f"Created PPT: {path.name}")
+        except ImportError: return ExecutionResult(False, "Install python-pptx")

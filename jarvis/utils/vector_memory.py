@@ -39,25 +39,14 @@ class VectorMemory:
 
     def should_store(self, text: str) -> bool:
         """
-        Filter: Only allow explicit facts/preferences.
+        Filter: Allow all conversation (User Request: 'use vectordb').
+        Originally restricted to facts, now open for full history.
         """
-        text = text.lower()
-        
-        # 1. Check explicit patterns
-        if any(re.search(p, text) for p in self.storage_patterns):
-            return True
-            
-        # 2. Reject casual chit-chat
-        # (Implicitly rejected if not matching above)
-        
-        return False
+        return True
     
     def add(self, text: str, metadata: dict = None):
-        """Add to vector DB if it passes filters."""
-        if not self.should_store(text):
-            return "[Memory] Ignored (Not a fact/preference)"
-            
-        # Clean text for storage (remove "remember that")
+        """Add to vector DB."""
+        # Clean text if it matches specific 'remember' patterns
         clean_text = text
         for p in ["remember that ", "save this ", "remember "]:
             if text.lower().startswith(p):
@@ -65,25 +54,52 @@ class VectorMemory:
                 break
                 
         # Upsert
-        # We need a unique ID. Using hash of text.
         import hashlib
-        doc_id = hashlib.md5(clean_text.encode()).hexdigest()
+        # Use deterministic ID based on content to prevent duplicates
+        # This allows Safe Backfilling and Re-scanning of learning data
+        doc_id = hashlib.md5(clean_text.encode(errors='ignore')).hexdigest()
         
-        self.collection.upsert(
+        # Handle empty metadata for ChromaDB compatibility
+        metadatas = [metadata] if metadata else None
+        
+        self.collection.upsert( # Changed from add to upsert for idempotency
             documents=[clean_text],
-            metadatas=[metadata or {}],
+            metadatas=metadatas,
             ids=[doc_id]
         )
-        return f"[Memory] Stored: {clean_text}"
+        return f"[Memory] Stored in VectorDB"
 
-    def search(self, query: str, n_results=1, threshold=0.3) -> Optional[Tuple[str, float]]:
+    def ingest_file(self, filepath: str):
+        """Read and digest a text file into memory."""
+        try:
+            path = Path(filepath)
+            if not path.exists() or not path.suffix == '.txt':
+                return f"Skipped {path.name} (Not a text file)"
+                
+            with open(path, 'r', encoding='utf-8') as f:
+                content = f.read()
+                
+            if not content.strip():
+                return "Empty file"
+                
+            # split into chunks? For now, index whole file or paragraphs.
+            # Simple chunking by paragraph
+            paragraphs = [p.strip() for p in content.split('\n\n') if p.strip()]
+            
+            count = 0
+            for p in paragraphs:
+                self.add(p, metadata={"source": path.name, "type": "learning_data"})
+                count += 1
+                
+            return f"Ingested {count} chunks from {path.name}"
+            
+        except Exception as e:
+            return f"Error ingesting {filepath}: {e}"
+
+    def search(self, query: str, n_results=3, threshold=0.65) -> Optional[str]:
         """
         Search memory.
-        Returns (text, distance) if distance < threshold.
-        Note: With 'cosine', distance is 1 - similarity.
-        So Distance 0.1 means 0.9 similarity (Very good).
-        Distance 0.4 means 0.6 similarity.
-        Threshold 0.4 is a reasonable strictness.
+        Returns combined text of top N results if distance < threshold.
         """
         results = self.collection.query(
             query_texts=[query],
@@ -93,14 +109,18 @@ class VectorMemory:
         if not results['documents'][0]:
             return None
             
-        text = results['documents'][0][0]
-        distance = results['distances'][0][0]
+        valid_docs = []
+        for i, text in enumerate(results['documents'][0]):
+            dist = results['distances'][0][i]
+            if dist <= threshold:
+                # Deduplicate: Don't add if it's identical to query (approx)
+                # Actually, sometimes the query IS the memory "I am from Haryana"
+                # But if query is "Where am I from?" and memory is "User: Where am I from?", that's useless.
+                # Let's keep it simple: Just add all valid matches. LLM can sift through.
+                # Format: "Match 1: ... \n Match 2: ..."
+                valid_docs.append(text)
         
-        # User Rule: if result.score < X: ignore
-        # Chroma 'cosine' distance: LOWER is BETTER (0 = identical, 1 = opposite)
-        # So we reject if distance > threshold
-        
-        if distance > threshold:
+        if not valid_docs:
             return None
             
-        return (text, distance)
+        return "\n\n".join(valid_docs)

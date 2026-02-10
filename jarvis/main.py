@@ -4,7 +4,16 @@ from jarvis.core.brain import Brain
 from jarvis.core.listener import Listener
 from jarvis.core.speech import Speaker
 from jarvis.utils.helpers import clean_text
-from jarvis.skills import basic, web, youtube, apps, system, weather, files, scrape
+from importlib import import_module
+
+
+def _optional_import(module_path: str):
+    """Import a skill module if its dependencies are installed."""
+    try:
+        return import_module(module_path)
+    except Exception as e:
+        print(f"[!] Skill disabled: {module_path} ({e})")
+        return None
 
 
 def main():
@@ -20,14 +29,27 @@ def main():
         speaker = Speaker()
         
         # Register all skills
-        brain.register("basic", basic.handle, ["time", "date", "joke", "who are you", "exit", "quit", "bye"])
-        brain.register("web", web.handle, ["search", "google"])
-        brain.register("youtube", youtube.handle, ["play", "youtube", "watch"])
-        brain.register("apps", apps.handle, ["open", "close", "launch", "start", "notepad", "calculator", "chrome", "chatgpt", "gemini"])
-        brain.register("system", system.handle, ["screenshot", "volume", "mute", "capture", "wifi", "internet", "brightness", "dim", "screen"])
-        brain.register("weather", weather.handle, ["weather", "temperature", "forecast", "rain", "hot", "cold"])
-        brain.register("files", files.handle, ["create file", "create document", "delete file", "list files", "find", "search", "locate", "where is"])
-        brain.register("scrape", scrape.handle, ["news", "headline", "gold", "stock", "market"])
+        basic = _optional_import("jarvis.skills.basic")
+        web = _optional_import("jarvis.skills.web")
+        youtube = _optional_import("jarvis.skills.youtube")
+        apps = _optional_import("jarvis.skills.apps")
+        system = _optional_import("jarvis.skills.system")
+        weather = _optional_import("jarvis.skills.weather")
+
+        if basic:
+            brain.register("basic", basic.handle, ["time", "date", "joke", "who are you", "exit", "quit", "bye"])
+        if web:
+            brain.register("web", web.handle, ["search", "google"])
+        if youtube:
+            brain.register("youtube", youtube.handle, ["play", "youtube", "watch"])
+        if apps:
+            brain.register("apps", apps.handle, ["open", "close", "launch", "start", "notepad", "calculator", "chrome", "chatgpt", "gemini"])
+        if system:
+            brain.register("system", system.handle, ["screenshot", "volume", "mute", "capture", "wifi", "internet", "brightness", "dim", "screen"])
+
+        if weather:
+            brain.register("weather", weather.handle, ["weather", "temperature", "forecast", "rain", "hot", "cold"])
+        # brain.register("files", ...) -> Handled/Registered internally by Executor (via FileManager)
         
         # Start listener
         html_path = Path("data/selenium_stt/speech_recognition.html").absolute()
@@ -38,16 +60,16 @@ def main():
         
         listener.start(str(html_path))
         
-        print("\n✓ JARVIS is ready! Speak now...")
+        print("\n[OK] JARVIS is ready! Speak now...")
         print("Say 'exit' to quit\n")
-        print("💡 Tips:")
+        print("[Tips]:")
         print("   - Say 'my name is [name]' to introduce yourself")
         print("   - Ask 'what did I say' to recall conversation")
         print("   - I'll remember our last 10 exchanges\n")
         
         # Startup greeting
         greeting = "Hello! I'm JARVIS, your personal assistant. How can I help you today?"
-        print(f"🤖 JARVIS: {greeting}")
+        print(f"JARVIS: {greeting}")
         speaker.speak(greeting)
         
     except Exception as e:
@@ -64,7 +86,7 @@ def main():
         while True:
             try:
                 if waiting_for_input:
-                    print("\n🎙️  Ready...")
+                    print("\n[Mic] Ready...")
                     waiting_for_input = False
                 
                 # Listen
@@ -77,7 +99,7 @@ def main():
                 
                 # Clean
                 query = clean_text(raw_text)
-                print(f"\n🎤 You: {query}")
+                print(f"\nYou: {query}")
                 
                 # Pause listener before speaking
                 try:
@@ -87,7 +109,7 @@ def main():
                 
                 # Process (brain handles memory automatically)
                 response = brain.process(query)
-                print(f"🤖 JARVIS: {response}")
+                print(f"JARVIS: {response}")
                 
                 # Speak (always talk back) with timeout
                 try:
@@ -111,7 +133,7 @@ def main():
                     # Farewell with name if known
                     name = brain.memory.get_context("user_name")
                     farewell = f"Goodbye {name}!" if name else "Goodbye!"
-                    print(f"🤖 JARVIS: {farewell}")
+                    print(f"JARVIS: {farewell}")
                     try:
                         speaker.speak(farewell)
                     except:
@@ -120,6 +142,9 @@ def main():
                         listener.stop_speaking()
                     except:
                         pass
+                    
+                    # Summarize before exit
+                    brain.memory.summarize_session()
                     break
             
             except KeyboardInterrupt:
@@ -129,14 +154,19 @@ def main():
                 continue
     
     except KeyboardInterrupt:
-        print("\n\n🤖 JARVIS: Shutting down. Goodbye!")
+        print("\n\nJARVIS: Shutting down. Goodbye!")
         try:
             speaker.speak("Shutting down. Goodbye!")
         except:
             pass
+        # Summarize on forced exit
+        try:
+            brain.memory.summarize_session()
+        except:
+            pass
     finally:
         listener.stop()
-        print("✓ JARVIS stopped")
+        print("[OK] JARVIS stopped")
 
 
 if __name__ == "__main__":

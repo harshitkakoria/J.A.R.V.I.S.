@@ -4,12 +4,20 @@ import json
 import base64
 import io
 from groq import Groq
-from rich.console import Console
 from dotenv import load_dotenv
 
 load_dotenv()
 
-console = Console()
+try:
+    from rich.console import Console  # type: ignore
+    console = Console()
+except Exception:
+    # `rich` is optional; fall back to plain printing if not installed.
+    class _ConsoleFallback:
+        def print(self, *args, **kwargs):
+            print(*args)
+
+    console = _ConsoleFallback()
 
 class LLM:
     """Wrapper for Groq API (Llama 3.1 for Text, Llama 3.2 for Vision)."""
@@ -24,7 +32,7 @@ class LLM:
         try:
             self.client = Groq(api_key=self.api_key)
             self.text_model = "llama-3.1-8b-instant"
-            # Vision models are currently decommissioned/unavailable on Groq.
+            # Vision models (Llama 3.2) are currently unavailable/decommissioned on Groq
             self.vision_model = None 
             console.print(f"[green]Groq Initialized (Text: {self.text_model}, Vision: Disabled)[/green]")
         except Exception as e:
@@ -105,3 +113,33 @@ class LLM:
         except Exception as e:
             console.print(f"[red]Vision Error: {e}[/red]")
             return f"I couldn't analyze the image. Error: {e}"
+
+    def chat_with_image_local(self, prompt: str, image, model: str = "llava") -> str:
+        """
+        Send image to local Ollama instance (e.g., llava).
+        """
+        import requests
+        
+        try:
+            # Convert PIL Image to Base64
+            buffered = io.BytesIO()
+            image.save(buffered, format="PNG")
+            img_str = base64.b64encode(buffered.getvalue()).decode()
+            
+            payload = {
+                "model": model,
+                "prompt": prompt,
+                "images": [img_str],
+                "stream": False
+            }
+            
+            console.print(f"[yellow]Sending to Local Ollama ({model})...[/yellow]")
+            response = requests.post("http://localhost:11434/api/generate", json=payload)
+            
+            if response.status_code == 200:
+                return response.json().get("response", "").strip()
+            else:
+                return f"Ollama Error ({response.status_code}): {response.text}"
+                
+        except Exception as e:
+            return f"Local Vision Failed: {e}. (Is Ollama running? Do you have '{model}' installed?)"

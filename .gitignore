@@ -105,6 +105,17 @@ htmlcov/
 test_*.py
 *_test.py
 
+
+# Data (Sensitive - No Commit)
+data/chats/
+data/chroma_db/
+data/learning_data/
+data/memory.json
+data/settings.json
+data/stt/
+# Keep generated voices if needed, or ignore
+data/tts_cache/
+
 # Agent
 .agent/
 .gemini/

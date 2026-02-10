@@ -1,13 +1,26 @@
-"""System commands - screenshot, volume, shutdown."""
 import subprocess
 from pathlib import Path
 from datetime import datetime
 import re
-
+import psutil
+import pyperclip
+import pyautogui
 
 def handle(query: str) -> str:
     """Handle system commands."""
     q = query.lower()
+    
+    # Media Control
+    if any(kw in q for kw in ["play", "pause", "stop", "next", "previous", "skip", "track", "media"]):
+        return control_media(q)
+
+    # System Status
+    if any(kw in q for kw in ["cpu", "ram", "memory", "battery", "system status", "pc health"]):
+        return get_system_status(q)
+        
+    # Clipboard
+    if any(kw in q for kw in ["clipboard", "copy", "paste"]):
+        return clipboard_manager(q)
     
     # Screenshot
     if "screenshot" in q or "capture" in q:
@@ -154,3 +167,203 @@ def control_volume(query: str) -> str:
         print(f"Volume error: {e}")
     
     return "Volume control unavailable"
+
+
+def control_media(query: str) -> str:
+    """Control media playback using pyautogui."""
+    try:
+        q = query.lower()
+        
+        if "play" in q or "pause" in q:
+            pyautogui.press("playpause")
+            return "Toggled media playback"
+            
+        elif "next" in q or "skip" in q:
+            pyautogui.press("nexttrack")
+            return "Skipped to next track"
+            
+        elif "previous" in q or "back" in q:
+            pyautogui.press("prevtrack")
+            return "Went back to previous track"
+            
+        elif "stop" in q:
+            pyautogui.press("stopmedia")
+            return "Stopped media"
+            
+    except Exception as e:
+        print(f"Media Error: {e}")
+        
+    return "Media control failed"
+
+
+def get_system_status(query: str) -> str:
+    """Get CPU, RAM, and Battery status."""
+    try:
+        status = []
+        q = query.lower()
+        
+        # CPU
+        if "cpu" in q or "system" in q or "health" in q:
+            cpu = psutil.cpu_percent(interval=0.1)
+            status.append(f"CPU: {cpu}%")
+            
+        # RAM
+        if "ram" in q or "memory" in q or "system" in q or "health" in q:
+            mem = psutil.virtual_memory()
+            # Convert to GB
+            used_gb = round(mem.used / (1024**3), 1)
+            total_gb = round(mem.total / (1024**3), 1)
+            percent = mem.percent
+            status.append(f"RAM: {used_gb}/{total_gb} GB ({percent}%)")
+            
+        # Battery
+        if "battery" in q or "power" in q or "system" in q or "health" in q:
+            battery = psutil.sensors_battery()
+            if battery:
+                plugged = "Plugged in" if battery.power_plugged else "On battery"
+                status.append(f"Battery: {battery.percent}% ({plugged})")
+            else:
+                status.append("Battery: No battery detected")
+                
+        if not status:
+            return "Please specify CPU, RAM, or Battery."
+            
+        return " | ".join(status)
+        
+    except Exception as e:
+        return f"Error getting system status: {e}"
+
+
+def clipboard_manager(query: str) -> str:
+    """Manage system clipboard."""
+    try:
+        q = query.lower()
+        
+        if "read" in q or "what is on" in q or "tell me" in q:
+            content = pyperclip.paste()
+            if not content:
+                return "Clipboard is empty."
+            # Truncate if too long for voice, but keep for chat
+            preview = content[:200] + "..." if len(content) > 200 else content
+            return f"Clipboard contains: {preview}"
+            
+        # Write to clipboard (usually from an args passing perspective, 
+        # but for voice, it might be 'copy [text]'). 
+        # Ideally, this function is called with a specific string to copy.
+        # But for now, we'll support "clear"
+        
+        if "clear" in q or "empty" in q:
+            pyperclip.copy("")
+            return "Clipboard cleared."
+            
+        # If the user says "copy X", we'd need to extract X.
+        # Simple extraction:
+        if "copy " in q:
+            text_to_copy = query.split("copy ", 1)[1].strip()
+            pyperclip.copy(text_to_copy)
+            return "Copied to clipboard."
+            
+        return "Clipboard command not recognized (Read/Clear/Copy)"
+        
+    except Exception as e:
+        return f"Clipboard error: {e}"
+
+
+def control_media(query: str) -> str:
+    """Control media playback using pyautogui."""
+    try:
+        q = query.lower()
+        
+        if "play" in q or "pause" in q:
+            pyautogui.press("playpause")
+            return "Toggled media playback"
+            
+        elif "next" in q or "skip" in q:
+            pyautogui.press("nexttrack")
+            return "Skipped to next track"
+            
+        elif "previous" in q or "back" in q:
+            pyautogui.press("prevtrack")
+            return "Went back to previous track"
+            
+        elif "stop" in q:
+            pyautogui.press("stopmedia")
+            return "Stopped media"
+            
+    except Exception as e:
+        print(f"Media Error: {e}")
+        
+    return "Media control failed"
+
+
+def get_system_status(query: str) -> str:
+    """Get CPU, RAM, and Battery status."""
+    try:
+        status = []
+        q = query.lower()
+        
+        # CPU
+        if "cpu" in q or "system" in q or "health" in q:
+            cpu = psutil.cpu_percent(interval=0.1)
+            status.append(f"CPU: {cpu}%")
+            
+        # RAM
+        if "ram" in q or "memory" in q or "system" in q or "health" in q:
+            mem = psutil.virtual_memory()
+            # Convert to GB
+            used_gb = round(mem.used / (1024**3), 1)
+            total_gb = round(mem.total / (1024**3), 1)
+            percent = mem.percent
+            status.append(f"RAM: {used_gb}/{total_gb} GB ({percent}%)")
+            
+        # Battery
+        if "battery" in q or "power" in q or "system" in q or "health" in q:
+            battery = psutil.sensors_battery()
+            if battery:
+                plugged = "Plugged in" if battery.power_plugged else "On battery"
+                status.append(f"Battery: {battery.percent}% ({plugged})")
+            else:
+                status.append("Battery: No battery detected")
+                
+        if not status:
+            return "Please specify CPU, RAM, or Battery."
+            
+        return " | ".join(status)
+        
+    except Exception as e:
+        return f"Error getting system status: {e}"
+
+
+def clipboard_manager(query: str) -> str:
+    """Manage system clipboard."""
+    try:
+        q = query.lower()
+        
+        if "read" in q or "what is on" in q or "tell me" in q:
+            content = pyperclip.paste()
+            if not content:
+                return "Clipboard is empty."
+            # Truncate if too long for voice, but keep for chat
+            preview = content[:200] + "..." if len(content) > 200 else content
+            return f"Clipboard contains: {preview}"
+            
+        # Write to clipboard (usually from an args passing perspective, 
+        # but for voice, it might be 'copy [text]'). 
+        # Ideally, this function is called with a specific string to copy.
+        # But for now, we'll support "clear"
+        
+        if "clear" in q or "empty" in q:
+            pyperclip.copy("")
+            return "Clipboard cleared."
+            
+        # If the user says "copy X", we'd need to extract X.
+        # Simple extraction:
+        if "copy " in q:
+            text_to_copy = query.split("copy ", 1)[1].strip()
+            pyperclip.copy(text_to_copy)
+            return "Copied to clipboard."
+            
+        return "Clipboard command not recognized (Read/Clear/Copy)"
+        
+    except Exception as e:
+        return f"Clipboard error: {e}"

@@ -1,6 +1,15 @@
 """Text mode for JARVIS (no voice)."""
 from jarvis.core.brain import Brain
-from jarvis.skills import basic, web, youtube, apps, system, weather, files, scrape
+from importlib import import_module
+
+
+def _optional_import(module_path: str):
+    """Import a skill module if its dependencies are installed."""
+    try:
+        return import_module(module_path)
+    except Exception as e:
+        print(f"[!] Skill disabled: {module_path} ({e})")
+        return None
 
 
 def main():
@@ -13,18 +22,29 @@ def main():
     brain = Brain(use_ai_decision=True)
     
     # Register all skills
-    brain.register("basic", basic.handle, ["time", "date", "joke", "who are you", "exit", "quit"])
-    brain.register("web", web.handle, ["search", "google", "open"])
-    brain.register("youtube", youtube.handle, ["play", "youtube", "watch"])
-    brain.register("apps", apps.handle, ["open", "close", "launch", "start"])
-    brain.register("system", system.handle, ["screenshot", "volume", "mute"])
-    brain.register("weather", weather.handle, ["weather", "temperature", "forecast"])
-    brain.register("files", files.handle, ["create", "delete", "list files"])
-    brain.register("scrape", scrape.handle, ["news", "headline", "gold", "stock"])
+    basic = _optional_import("jarvis.skills.basic")
+    web = _optional_import("jarvis.skills.web")
+    youtube = _optional_import("jarvis.skills.youtube")
+    apps = _optional_import("jarvis.skills.apps")
+    system = _optional_import("jarvis.skills.system")
+    weather = _optional_import("jarvis.skills.weather")
+
+    if basic:
+        brain.register("basic", basic.handle, ["time", "date", "joke", "who are you", "exit", "quit"])
+    if web:
+        brain.register("web", web.handle, ["search", "google", "open"])
+    if youtube:
+        brain.register("youtube", youtube.handle, ["play", "youtube", "watch"])
+    if apps:
+        brain.register("apps", apps.handle, ["open", "close", "launch", "start"])
+    if system:
+        brain.register("system", system.handle, ["screenshot", "volume", "mute"])
+    if weather:
+        brain.register("weather", weather.handle, ["weather", "temperature", "forecast"])
     
-    print("\n✓ JARVIS ready! Type your commands.")
+    print("\n[OK] JARVIS ready! Type your commands.")
     print("Type 'exit' to quit\n")
-    print("💡 Memory enabled:")
+    print("[Tip] Memory enabled:")
     print("   - Say 'my name is [name]' to introduce yourself")
     print("   - Ask 'what did I say' to recall")
     print("   - Type 'remember' to see conversation history\n")
